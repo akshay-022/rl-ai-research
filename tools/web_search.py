@@ -42,8 +42,12 @@ def web_search(query, max_results=5):
         return {"results": [], "query": query, "error": "Empty query"}
 
     try:
+        # Filter to papers from last 2 years
+        from datetime import datetime, timedelta
+        cutoff = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
+
         params = urllib.parse.urlencode({
-            "search_query": f"all:{query}",
+            "search_query": f"all:{query} AND submittedDate:[{cutoff} TO *]",
             "start": 0,
             "max_results": min(max_results, 100),
             "sortBy": "relevance",
