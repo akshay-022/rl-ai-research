@@ -1,3 +1,8 @@
+"""
+Tools for literature review task.
+Provides paper search, TLDR summaries, and reference retrieval.
+"""
+
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -6,12 +11,13 @@ import json
 ARXIV_API = "http://export.arxiv.org/api/query"
 NS = {"atom": "http://www.w3.org/2005/Atom"}
 
-# Semantic Scholar API (fallback)
+# Semantic Scholar API
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 SEMANTIC_SCHOLAR_API_KEY = "gJOElmNEvP6tx12G5RVa05tEsQcAPYT34IbubhEn"
 
 
-def _parse_response(xml_data):
+def _parse_arxiv_response(xml_data):
+    """Parse arXiv API XML response into paper dicts."""
     root = ET.fromstring(xml_data)
     papers = []
 
@@ -43,7 +49,7 @@ def _parse_response(xml_data):
 
 
 def _search_semantic_scholar(query, max_results=5):
-    """Fallback search using Semantic Scholar API."""
+    """Search using Semantic Scholar API."""
     from datetime import datetime, timedelta
     cutoff_year = (datetime.now() - timedelta(days=730)).year
 
@@ -78,7 +84,7 @@ def _search_semantic_scholar(query, max_results=5):
             "title": paper.get("title", ""),
             "abstract": paper.get("abstract"),
             "url": paper.get("url") or f"https://www.semanticscholar.org/paper/{paper.get('paperId', '')}",
-            "arxiv_id": None,  # Semantic Scholar doesn't always have arXiv IDs
+            "paper_id": paper.get("paperId"),
             "year": paper.get("year"),
             "authors": authors,
             "source": "semantic_scholar",
@@ -88,6 +94,9 @@ def _search_semantic_scholar(query, max_results=5):
 
 
 def web_search(query, max_results=5):
+    """
+    Search for ML/AI papers. Tries arXiv first, falls back to Semantic Scholar.
+    """
     if not query or not query.strip():
         return {"results": [], "query": query, "error": "Empty query"}
 
@@ -108,11 +117,11 @@ def web_search(query, max_results=5):
 
         req = urllib.request.Request(f"{ARXIV_API}?{params}", headers={"User-Agent": "Python"})
         with urllib.request.urlopen(req, timeout=15) as resp:
-            papers = _parse_response(resp.read().decode("utf-8"))
+            papers = _parse_arxiv_response(resp.read().decode("utf-8"))
 
-        # Add source field for consistency
         for p in papers:
             p["source"] = "arxiv"
+            p["paper_id"] = p.get("arxiv_id")
 
         return {"results": papers, "query": query, "error": None, "source": "arxiv"}
     except Exception as e:
@@ -126,25 +135,6 @@ def web_search(query, max_results=5):
         return {"results": [], "query": query, "error": f"arXiv: {arxiv_error}; Semantic Scholar: {str(e)}"}
 
 
-def get_paper_by_id(arxiv_id):
-    arxiv_id = arxiv_id.replace("arXiv:", "").replace("arxiv:", "").strip()
-    if not arxiv_id:
-        return {"error": "Empty arXiv ID"}
-
-    try:
-        params = urllib.parse.urlencode({"id_list": arxiv_id})
-        req = urllib.request.Request(f"{ARXIV_API}?{params}", headers={"User-Agent": "Python"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            papers = _parse_response(resp.read().decode("utf-8"))
-
-        if not papers:
-            return {"error": f"Paper not found: {arxiv_id}"}
-
-        return {**papers[0], "error": None}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 def get_paper_with_tldr(paper_id):
     """
     Get detailed paper info including AI-generated TLDR summary.
@@ -156,7 +146,6 @@ def get_paper_with_tldr(paper_id):
     # Normalize arXiv IDs to include prefix
     paper_id = str(paper_id).strip()
     if paper_id.replace(".", "").replace("v", "").isdigit() or (len(paper_id.split(".")) == 2):
-        # Looks like an arXiv ID without prefix
         if not paper_id.lower().startswith("arxiv:"):
             paper_id = f"arXiv:{paper_id}"
 
@@ -177,18 +166,15 @@ def get_paper_with_tldr(paper_id):
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
-        # Extract authors
         authors = []
         for author in (data.get("authors") or [])[:5]:
             if author.get("name"):
                 authors.append(author["name"])
 
-        # Extract TLDR
         tldr = None
         if data.get("tldr") and data["tldr"].get("text"):
             tldr = data["tldr"]["text"]
 
-        # Extract PDF URL
         pdf_url = None
         if data.get("openAccessPdf") and data["openAccessPdf"].get("url"):
             pdf_url = data["openAccessPdf"]["url"]
@@ -217,7 +203,6 @@ def get_paper_references(paper_id, limit=10):
     if not paper_id or not str(paper_id).strip():
         return {"error": "Empty paper ID", "references": []}
 
-    # Normalize arXiv IDs
     paper_id = str(paper_id).strip()
     if paper_id.replace(".", "").replace("v", "").isdigit() or (len(paper_id.split(".")) == 2):
         if not paper_id.lower().startswith("arxiv:"):
@@ -273,10 +258,10 @@ def get_paper_references(paper_id, limit=10):
         return {"error": str(e), "references": []}
 
 
-# Tool definitions for task.py
+# Tool definitions for Anthropic API
 WEB_SEARCH_TOOL = {
     "name": "web_search",
-    "description": "Search for ML/AI papers on arXiv (with Semantic Scholar fallback). Returns titles, abstracts, and IDs.",
+    "description": "Search for ML/AI papers on arXiv (with Semantic Scholar fallback). Returns titles, abstracts, and paper IDs.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -284,18 +269,6 @@ WEB_SEARCH_TOOL = {
             "max_results": {"type": "integer", "default": 5}
         },
         "required": ["query"],
-    },
-}
-
-GET_PAPER_TOOL = {
-    "name": "get_paper_details",
-    "description": "Get paper details by arXiv ID",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "arxiv_id": {"type": "string", "description": "arXiv ID (e.g. 2104.09864)"}
-        },
-        "required": ["arxiv_id"],
     },
 }
 
@@ -316,7 +289,7 @@ GET_PAPER_TLDR_TOOL = {
 
 GET_PAPER_REFS_TOOL = {
     "name": "get_paper_references",
-    "description": "Get papers that a given paper cites (its references). Useful for finding foundational/related work mentioned in a paper's introduction.",
+    "description": "Get papers that a given paper cites (its references). Useful for finding foundational/related work.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -334,11 +307,10 @@ GET_PAPER_REFS_TOOL = {
     },
 }
 
-TOOLS = [WEB_SEARCH_TOOL, GET_PAPER_TOOL, GET_PAPER_TLDR_TOOL, GET_PAPER_REFS_TOOL]
+TOOLS = [WEB_SEARCH_TOOL, GET_PAPER_TLDR_TOOL, GET_PAPER_REFS_TOOL]
 
 HANDLERS = {
     "web_search": lambda query, max_results=5: web_search(query, max_results),
-    "get_paper_details": lambda arxiv_id: get_paper_by_id(arxiv_id),
     "get_paper_with_tldr": lambda paper_id: get_paper_with_tldr(paper_id),
     "get_paper_references": lambda paper_id, limit=10: get_paper_references(paper_id, limit),
 }

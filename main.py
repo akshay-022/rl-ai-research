@@ -8,7 +8,7 @@ from anthropic.types import MessageParam, ToolUnionParam
 
 from task import PROMPT, TOOL_HANDLERS, TOOLS, grading_func
 
-MAX_TOKENS = 1000
+MAX_TOKENS = 4000  # Increased for literature reviews
 
 
 async def run_agent_loop(
@@ -151,23 +151,28 @@ async def run_single_test(
         prompt=prompt,
         tools=tools,
         tool_handlers=tool_handlers,
-        max_steps=5,
+        max_steps=15,  # More steps for literature review
         verbose=verbose,
     )
 
     success = grading_func(result)
 
+    # Truncate long results for display
+    display_result = result
+    if isinstance(result, str) and len(result) > 200:
+        display_result = result[:200] + "..."
+
     if success:
-        print(f"✓ Run {run_id}: SUCCESS - Got {result}")
+        print(f"✓ Run {run_id}: SUCCESS - Got {display_result}")
     else:
-        print(f"✗ Run {run_id}: FAILURE - Got {result}")
+        print(f"✗ Run {run_id}: FAILURE - Got {display_result}")
 
     return run_id, success, result
 
 
 async def main(concurrent: bool = True):
-    # Run the test 10 times and track success rate
-    num_runs = 10
+    # Run the test - reduced for initial testing
+    num_runs = 1
 
     execution_mode = "concurrently" if concurrent else "sequentially"
     print(f"Running {num_runs} test iterations {execution_mode}...")

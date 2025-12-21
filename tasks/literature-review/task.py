@@ -11,9 +11,7 @@ This file contains:
 from collections.abc import Callable
 from typing import Any, TypedDict
 
-from anthropic.types import ToolUnionParam
-
-from tools.web_search import TOOLS as WEB_TOOLS, HANDLERS as WEB_HANDLERS
+from .tools import TOOLS as RESEARCH_TOOLS, HANDLERS as RESEARCH_HANDLERS
 
 
 class SubmitAnswerToolResult(TypedDict):
@@ -22,13 +20,11 @@ class SubmitAnswerToolResult(TypedDict):
 
 
 def submit_answer_tool(answer: Any) -> SubmitAnswerToolResult:
-    """
-    Tool for submitting the final answer.
-    """
+    """Tool for submitting the final literature review."""
     return {"answer": answer, "submitted": True}
 
 
-# Tool definitions for Anthropic API
+# Submit tool definition
 SUBMIT_TOOL = {
     "name": "submit_answer",
     "description": "Submit your final literature review",
@@ -39,14 +35,14 @@ SUBMIT_TOOL = {
     },
 }
 
-TOOLS: list[ToolUnionParam] = WEB_TOOLS + [SUBMIT_TOOL]
+# Combined tools
+TOOLS = RESEARCH_TOOLS + [SUBMIT_TOOL]
 
-# Tool handlers mapping
+# Combined handlers
 TOOL_HANDLERS: dict[str, Callable[..., Any]] = {
-    **WEB_HANDLERS,
+    **RESEARCH_HANDLERS,
     "submit_answer": submit_answer_tool,
 }
-
 
 # The research topic for the literature review
 TOPIC = "giving LLMs long term memory"
@@ -71,19 +67,15 @@ Use the available tools to gather information, then submit your complete literat
 Be thorough but concise. Cite specific papers by title when discussing their contributions."""
 
 
-# Grading function - validates the agent's submitted answer
 def grading_func(result: Any) -> bool:
     """
     Validates the literature review.
 
     Checks that the review:
     1. Is a non-empty string of reasonable length
-    2. Mentions specific paper titles
+    2. Mentions memory-related concepts
     3. Discusses methods/approaches
     4. Includes findings/results
-
-    Args:
-        result: The submitted literature review
 
     Returns:
         True if the review meets quality criteria, False otherwise
