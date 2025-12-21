@@ -240,3 +240,7 @@ node_modules/
 .pub-cache/
 .pub/
 build/
+
+
+
+*.env
