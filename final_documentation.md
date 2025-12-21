@@ -24,6 +24,7 @@ I want to evaluate along a few dimensions -
 3. That it has cited all the seminal papers in the space. 
 4. Additional points if it has looked at adjacent fields and drawn parallels. Like Ilya is trying to do by comparing AI to the human brain. 
 5. Potential reward if it analyses the promise and business viability in each of these directions of research.
+6. Potentially analyse a few big bottlenecks in the space which if solved could be huge.
 
 How do we do this evaluation?
 1. The best way seems to be to use the best researchers to create a SoTA dataset for this. I am using a proxy - using deep research for a few different topics and assigning a reward signal as percentage of distinct spaces of the field the llm dove into. 
