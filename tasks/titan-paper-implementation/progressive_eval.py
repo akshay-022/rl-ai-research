@@ -42,14 +42,19 @@ STEP_4_PROMPT = """Consider a Transformer block that has BOTH:
 1. Standard attention (for short-term context)
 2. A neural memory module (for long-term storage)
 
-How do you combine their outputs in a single block?"""
+How should you combine their outputs? Just adding them (attn + mem) seems too simple.
 
-STEP_5_PROMPT = """Implement a neural memory module in PyTorch that:
-- Uses a matrix M to store information
-- Updates M recurrently as it processes each token
-- Can be combined with standard attention in a Transformer block
+What's a better approach and why?"""
 
-Give me complete, runnable code for a `NeuralMemory` module and a `MemoryBlock` that uses both attention and memory."""
+STEP_5_PROMPT = """Implement a neural memory module in PyTorch.
+
+Requirements:
+- Store information in a matrix M (not a list of vectors)
+- Update M for each token using outer products
+- Include a mechanism to prevent memory saturation
+- Process tokens one at a time (recurrently)
+
+Give me complete, runnable code for a `NeuralMemory` class."""
 
 
 PROMPTS = [
@@ -62,102 +67,128 @@ PROMPTS = [
 
 
 # --- GRADING RUBRICS FOR EACH STEP ---
-# These rubrics are STRICT - we want Haiku to fail 60-90% of the time
+# Philosophy: Be STRICT. We want only 10-40% pass rate (60-90% fail rate)
+# The agent must demonstrate deep understanding, not just surface-level answers
 
-STEP_1_RUBRIC = """Evaluate if the response proposes a HIGH-DIMENSIONAL memory structure that uses OUTER PRODUCTS.
+STEP_1_RUBRIC = """You are evaluating if the response proposes ASSOCIATIVE/MATRIX memory (not simple vector storage).
 
-**PASS criteria (must meet BOTH):**
-1. Proposes memory as a matrix M with dimensions like (d x d) - NOT just (memory_slots x d)
-2. Explicitly mentions using "outer product" (v ⊗ k^T) to store key-value associations
+**PASS if ANY of these appear (be generous):**
+- Symbols: ⊗, outer(x,y), v @ k^T, v k^T, rank-1
+- Terms: "outer product", "fast weights", "weight matrix", "associative memory"
+- Terms: "Hopfield", "attractor", "energy-based"
+- Linear attention with kernel/feature maps (implicit associative)
+- ANY matrix M that gets UPDATED additively: M ← M + ...
+- Memory described as (d × d) or (d_k × d_v) matrix shape
 
-**FAIL criteria (any of these = FAIL):**
-- Proposes memory as (n x d) where n is just number of slots - this is just a list of vectors
-- Uses standard attention over memory slots instead of outer product
-- Proposes retrieval-based memory (like memory networks) instead of fast weights
-- No explicit outer product formulation
+**FAIL only if:**
+- Memory is ONLY described as list/buffer of vectors
+- ONLY proposes K,V cache with attention retrieval
+- No matrix update rule at all
 
-Be STRICT. A memory bank of shape (k x d) is NOT the same as a fast-weight matrix (d x d).
+Be GENEROUS. If there's ANY matrix update equation (M = M + ...), pass it.
+The response doesn't need perfect outer product notation - just matrix-based memory.
 
 Respond with exactly:
 STEP 1: PASS or FAIL
-Reason: [brief explanation]"""
+Reason: [Quote the matrix update or associative term found.]"""
 
-STEP_2_RUBRIC = """Evaluate if the response proposes a SURPRISE-BASED filtering mechanism.
+STEP_2_RUBRIC = """You are evaluating whether the response proposes a NOVELTY or SURPRISE-based filter.
 
-**PASS criteria (must meet BOTH):**
-1. Proposes measuring "surprise" or "novelty" - how unexpected the input is
-2. This surprise metric is used to GATE memory updates (not just filter/select)
+**PASS if ANY of these concepts appear:**
+- Words: "surprise", "surprising", "novel", "novelty", "unexpected", "anomaly"
+- Words: "prediction error", "reconstruction error", "mismatch"
+- Concept: Comparing what memory PREDICTS vs what actually arrives
+- Concept: Storing things that are DIFFERENT from existing memory
+- Concept: High error = high write, low error = low write
+- Concept: "Interference" or "pattern saturation" as the problem (shows understanding)
 
-**FAIL criteria (any of these = FAIL):**
-- Only proposes a generic "importance" or "relevance" gate without surprise/novelty
-- Uses attention scores as the gate (this is relevance, not surprise)
-- Gate is based on position or frequency, not content unpredictability
-- No mechanism that measures how "surprising" or "novel" the input is
+**FAIL only if:**
+- ONLY talks about "importance" without defining it as surprise
+- ONLY uses attention-style "relevance" scoring
+- Proposes filtering but with no concrete mechanism at all
+- Says "select important tokens" without explaining what makes them important
 
-The key insight is: surprise = "how wrong was my prediction?" NOT "how relevant is this?"
+Look for the WORDS "surprise", "novel", "unexpected", "error", "predict".
+If any of these appear in context of filtering, PASS.
 
 Respond with exactly:
 STEP 2: PASS or FAIL
-Reason: [brief explanation]"""
+Reason: [Found surprise/novelty concept? Quote the key phrase.]"""
 
-STEP_3_RUBRIC = """Evaluate if the response proposes the EXACT update rule with BOTH decay AND surprise.
+STEP_3_RUBRIC = """You are evaluating whether the update rule includes DECAY (forgetting).
 
-**PASS criteria (must meet ALL THREE):**
-1. Has explicit DECAY term: M_new = decay * M_old + ... (where decay < 1)
-2. Has explicit SURPRISE term that gates the update magnitude
-3. Uses OUTER PRODUCT for the update: decay * M + surprise * (V ⊗ K^T)
+**The key insight:** Memory needs to FORGET old information to prevent saturation.
 
-**FAIL criteria (any of these = FAIL):**
-- Missing decay term (just M_new = M + update)
-- Missing surprise gating (just M_new = decay*M + update)
-- No outer product (V ⊗ K^T) in the formula
-- Uses interpolation like M = (1-W)*M + W*V without outer product
-- Has decay OR surprise but not BOTH
+**PASS if the equation includes DECAY:**
+- Shows γ * M or (1-η) * M or decay * M or similar
+- The decay factor should be < 1 (or learned)
+- Can be written as: M_new = decay*M + update
+- Or equivalently: M_new = M - forget_rate*M + update
 
-This is strict: the formula MUST be: M_new = decay * M_old + surprise * (V ⊗ K^T)
-Or equivalent with both components clearly present.
+**ALSO give PASS if:**
+- Shows explicit "forgetting" or "decay" in the equation
+- Uses exponential moving average style update
+- Has a term that REDUCES old memory over time
+
+**FAIL if:**
+- Just M_new = M + update (purely additive, no decay)
+- No explicit decay/forget term visible
+- Says "decay" in text but equation shows M_new = M + ...
+
+Look at the EQUATION specifically. Is there multiplication of M by a decay factor?
 
 Respond with exactly:
 STEP 3: PASS or FAIL
-Reason: [brief explanation]"""
+Reason: [Is there a decay term multiplying M_old? Quote it.]"""
 
-STEP_4_RUBRIC = """Evaluate if the response proposes LEARNED SIGMOID GATING for fusion.
+STEP_4_RUBRIC = """You are evaluating whether fusion uses COMPLEMENTARY GATING (weights sum to 1).
 
-**PASS criteria (must meet ALL):**
-1. Uses sigmoid activation specifically (not softmax, not learned weights alone)
-2. Computes gate from BOTH attention and memory outputs: g = sigmoid(W[attn; mem])
-3. Final output uses complementary weighting: out = g*attn + (1-g)*mem
+**The key pattern:** out = g*attn + (1-g)*mem where g comes from sigmoid
 
-**FAIL criteria (any of these = FAIL):**
-- Uses simple addition or concatenation
-- Uses only attention or only memory to compute the gate (must use both)
-- Uses softmax instead of sigmoid
-- Uses fixed/hardcoded mixing weights
-- Missing the (1-g) complementary term
+**PASS requires ALL of these:**
+1. Shows the explicit (1-g) or (1-gate) pattern - MUST be present
+2. Uses sigmoid (not softmax, not hardcoded)
+3. The gate g is learned (from a linear layer, not hardcoded 0.5)
 
-The exact pattern required: g = sigmoid(linear([attn, mem])), then g*attn + (1-g)*mem
+**FAIL if ANY of these (be strict about complementary):**
+- Simple addition: out = attn + mem (no gating)
+- Concatenation only: out = Linear(concat(attn, mem)) (no g * (1-g))
+- Hardcoded weights: 0.5*attn + 0.5*mem
+- Two separate weights: α*attn + β*mem (unless α + β = 1 is enforced)
+- Missing (1-g) pattern: g*attn + mem (only one term gated)
+- Says "gating" but doesn't show the (1-g) in the formula
+- Uses softmax over [attn, mem] (while valid, we specifically want sigmoid + (1-g))
+
+The (1-g) is CRITICAL. Look for "1 - g", "(1-gate)", "1 - gate" explicitly in the output formula.
 
 Respond with exactly:
 STEP 4: PASS or FAIL
-Reason: [brief explanation]"""
+Reason: [Is (1-g) pattern explicit in the fusion equation?]"""
 
-STEP_5_RUBRIC = """Evaluate the FINAL IMPLEMENTATION code. Be VERY STRICT.
+STEP_5_RUBRIC = """You are evaluating the implementation against specific requirements.
 
-**Must have ALL 6 components to PASS:**
+**4 required components (from the prompt):**
+1. **Matrix M storage** - Memory stored as a matrix (d×d or d×k), NOT as list of vectors
+2. **Outer product update** - Uses outer(v, k), v @ k.T, torch.bmm, or einsum for updates
+3. **Saturation prevention** - Has decay (η*M), gating, or forgetting mechanism
+4. **Token-by-token processing** - Explicit for loop over sequence (not batch processing)
 
-1. **NeuralMemory class** - Proper nn.Module with forward method
-2. **Surprise gate** - Uses sigmoid to compute surprise from prediction error or learned gate
-3. **Learnable decay** - nn.Parameter for memory fade (not hardcoded)
-4. **Outer product** - V⊗K^T computed via torch.bmm or einsum (not matmul on batched vectors)
-5. **Recurrent loop** - Explicit for loop: "for t in range(seq_len)" updating state each step
-6. **Fusion gate** - g = sigmoid(...) then g*attn + (1-g)*mem pattern
+**PASS requires ALL 4 components:**
+- All 4 present = PASS
+- Missing ANY = FAIL
 
-**FAIL if missing ANY of these.** Partial credit does not count as pass.
+**Strict checking:**
+- Matrix storage: Look for M shape like (d, d) or (d_k, d_v), not (n, d)
+- Outer product: Must show explicit transpose or outer operation
+- Saturation: Must have decay term multiplying M or forget gate
+- Sequential: Must have "for t in range" or similar loop
+
+Most implementations miss 1-2 components. Be strict about the requirements stated in the prompt.
 
 Respond with exactly:
 STEP 5: PASS or FAIL
-Components passed: X/6
-Reason: [brief explanation]"""
+Components passed: X/4
+Reason: [Which are present/missing?]"""
 
 RUBRICS = [
     STEP_1_RUBRIC,
@@ -296,6 +327,103 @@ def run_progressive_evaluation(model: str = "claude-haiku-4-5"):
     return results
 
 
+def _run_single_evaluation_quiet(model: str, run_id: int):
+    """Run a single evaluation without printing (for parallel runs)."""
+    client = anthropic.Anthropic()
+
+    # Run all 5 steps in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for i, (step_name, prompt) in enumerate(PROMPTS):
+            future = executor.submit(
+                _run_single_step,
+                client, model, i, step_name, prompt, RUBRICS[i]
+            )
+            futures.append(future)
+        step_results = [f.result() for f in futures]
+
+    step_results.sort(key=lambda x: x["step"])
+    total_passed = sum(1 for s in step_results if s["passed"])
+    overall_pass = total_passed >= 4
+
+    return {
+        "run_id": run_id,
+        "model": model,
+        "steps": step_results,
+        "total_passed": total_passed,
+        "overall_pass": overall_pass,
+    }
+
+
+def run_multiple_evaluations(model: str = "claude-haiku-4-5", num_runs: int = 5):
+    """
+    Run multiple evaluations IN PARALLEL and aggregate results.
+
+    Args:
+        model: The model to test
+        num_runs: Number of evaluation runs (all run in parallel)
+
+    Returns:
+        dict with aggregated statistics
+    """
+    print(f"\n{'='*60}")
+    print(f"PARALLEL EVALUATION: {num_runs} runs")
+    print(f"Model: {model}")
+    print(f"{'='*60}")
+    print(f"\nRunning {num_runs} evaluations in parallel...")
+
+    # Run all evaluations in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_runs) as executor:
+        futures = [
+            executor.submit(_run_single_evaluation_quiet, model, i)
+            for i in range(num_runs)
+        ]
+        all_results = [f.result() for f in futures]
+
+    # Aggregate results
+    step_pass_counts = [0, 0, 0, 0, 0]
+    overall_pass_count = 0
+
+    print(f"\n{'='*60}")
+    print("INDIVIDUAL RUN RESULTS")
+    print(f"{'='*60}")
+
+    for result in all_results:
+        steps_passed = [s["passed"] for s in result["steps"]]
+        step_str = "".join(["✓" if p else "✗" for p in steps_passed])
+        status = "PASS" if result["overall_pass"] else "FAIL"
+        print(f"Run {result['run_id']+1}: {step_str} ({result['total_passed']}/5) - {status}")
+
+        for i, passed in enumerate(steps_passed):
+            if passed:
+                step_pass_counts[i] += 1
+        if result["overall_pass"]:
+            overall_pass_count += 1
+
+    # Print statistics
+    print(f"\n{'='*60}")
+    print("AGGREGATE STATISTICS")
+    print(f"{'='*60}")
+
+    step_names = ["Memory Structure", "Filtering/Surprise", "Update Rule", "Fusion", "Implementation"]
+    for i, (name, count) in enumerate(zip(step_names, step_pass_counts)):
+        pct = count / num_runs * 100
+        print(f"Step {i+1} ({name}): {count}/{num_runs} passed ({pct:.0f}%)")
+
+    overall_pct = overall_pass_count / num_runs * 100
+    print(f"\nOverall Pass Rate: {overall_pass_count}/{num_runs} ({overall_pct:.0f}%)")
+
+    return {
+        "model": model,
+        "num_runs": num_runs,
+        "step_pass_counts": step_pass_counts,
+        "step_pass_rates": [c/num_runs for c in step_pass_counts],
+        "overall_pass_count": overall_pass_count,
+        "overall_pass_rate": overall_pass_count / num_runs,
+        "all_results": all_results,
+    }
+
+
 def run_comparison(models: list[str] = None):
     """
     Run the evaluation on multiple models and compare results.
@@ -330,5 +458,12 @@ def run_comparison(models: list[str] = None):
 
 
 if __name__ == "__main__":
-    # Run on Haiku to test
-    results = run_progressive_evaluation("claude-haiku-4-5")
+    import sys
+
+    # Check for --multi flag to run multiple parallel evaluations
+    if len(sys.argv) > 1 and sys.argv[1] == "--multi":
+        num_runs = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+        results = run_multiple_evaluations("claude-haiku-4-5", num_runs=num_runs)
+    else:
+        # Single run with full output
+        results = run_progressive_evaluation("claude-haiku-4-5")
