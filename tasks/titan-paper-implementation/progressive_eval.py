@@ -1,15 +1,14 @@
 """
 Progressive Titans Evaluation Suite
 
-Tests an agent's ability to "discover" the Titans architecture step-by-step,
-rather than just implementing from a full specification.
+Tests an agent's ability to "discover" the Titans architecture step-by-step.
+Each step is INDEPENDENT and runs in PARALLEL - no cascading dependencies.
 
-Each step builds on the previous, testing whether the agent can independently
-arrive at the key insights that make Titans work.
+For later steps that need conceptual context, brief Titans paper hints are provided.
 """
 
 import os
-from typing import Any
+import concurrent.futures
 from dotenv import load_dotenv
 import anthropic
 
@@ -18,43 +17,42 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 
 # --- THE 5-STEP PROGRESSIVE PROMPTS ---
+# Each prompt is SELF-CONTAINED and can be evaluated independently
+# Later steps get brief Titans paper hints for necessary context
 
-STEP_1_PROMPT = """I want to modify the standard Transformer to handle effectively infinite context without increasing the quadratic cost of attention.
+STEP_1_PROMPT = """I want to add a memory system to a Transformer that can handle very long sequences without the quadratic attention cost.
 
-Standard RNNs solve this with a 'hidden state,' but that vector is too small and low-dimensional to hold complex historical details. I want you to propose a **new memory module** that sits alongside the attention mechanism.
+What kind of memory structure would you propose? Describe its mathematical form."""
 
-**Constraint:** This memory should be 'high-dimensional'—mathematically richer than a simple vector—and should act like a learning system that updates itself as it reads text.
+STEP_2_PROMPT = """Consider a neural memory system where we store information in a weight matrix M that gets updated for every token.
 
-Describe the mathematical structure of this memory state and how it 'stores' a new token."""
+If you update this memory for every token, won't it get overwhelmed with noise?
 
-STEP_2_PROMPT = """That sounds plausible. However, we have a problem. If this memory module updates its state for every single token (like 'the', 'is', 'at'), the high-dimensional state will become saturated with noise and overwrite important information almost immediately.
+What's the problem here and how would you address it?"""
 
-Without using an external clear-memory trigger, **how does the module intrinsically decide** which information is worth 'encoding' into the long-term memory and which should be ignored?
+STEP_3_PROMPT = """Consider a neural memory system for Transformers where:
+- Memory is stored as a matrix M (like fast weights)
+- We need to control which tokens get written to memory
 
-Propose a mechanism that allows the model to self-regulate this update process."""
+Give me the complete mathematical update rule for this memory.
 
-STEP_3_PROMPT = """Let's refine that filtering mechanism using an analogy to the human brain. We don't remember everything; we primarily remember things that are **unexpected** or **surprising** (i.e., where our internal prediction was wrong).
+Write it as a single equation: M_new = ..."""
 
-1. How can we mathematically approximate 'surprise' in a forward pass without running a full backward propagation?
-2. The brain also slowly forgets old data to make room for new data.
+STEP_4_PROMPT = """Consider a Transformer block that has BOTH:
+1. Standard attention (for short-term context)
+2. A neural memory module (for long-term storage)
 
-Combine these two concepts into a single mathematical **Update Rule** for your memory matrix M. It should include terms for the **Old State**, the **Decay**, the **Surprise**, and the **New Data**."""
+How do you combine their outputs in a single block? The Titans paper uses a "Memory as a Gate" approach."""
 
-STEP_4_PROMPT = """Now we have two parallel branches in our block:
-1. **Short-term:** The Sliding Window Attention (precise, local context).
-2. **Long-term:** Your Neural Memory Matrix (compressed, infinite context).
+STEP_5_PROMPT = """Implement a Titans-style neural memory module in PyTorch.
 
-Sometimes the answer is in the immediate past (Attention wins). Sometimes it's deep in the history (Memory wins).
+Context from the Titans paper:
+- Memory is a matrix M that stores key-value associations via outer product: V ⊗ K^T
+- A "surprise" gate (sigmoid) controls how much each token writes to memory
+- Memory decays over time with a learnable parameter
+- The update rule: M_new = decay * M_old + surprise * (V ⊗ K^T)
 
-If we just add their outputs together, the signal gets muddy. Design a **Fusion Layer** that dynamically resolves conflicts between these two branches. It should allow the model to 'choose' which memory source to trust for each specific token."""
-
-STEP_5_PROMPT = """This architecture looks solid. Now, I need you to make it real.
-
-1. **Code:** Write the PyTorch implementation for this `TitansBlock` and the `NeuralMemory` module. Ensure the 'Surprise' gate and 'Momentum/Decay' update rule are explicitly implemented.
-
-2. **Evaluation:** Standard benchmarks (like MMLU) won't test this 'infinite memory' capability well. What specific **synthetic tasks** or **metrics** should we use to prove that this specific architecture is better than a standard Transformer?
-
-Submit complete, runnable PyTorch code."""
+Give me a complete, runnable `NeuralMemory` module and a `MemoryBlock` that combines attention with memory using learned gating."""
 
 
 PROMPTS = [
@@ -178,118 +176,130 @@ RUBRICS = [
 ]
 
 
-def run_progressive_evaluation(model: str = "claude-haiku-4-5-20250514"):
+def _run_single_step(client, model: str, step_idx: int, step_name: str, prompt: str, rubric: str):
     """
-    Run the 5-step progressive evaluation on a model.
+    Run a single step of the evaluation (agent call + grading).
+    This is called in parallel for all 5 steps.
+    """
+    # Get response from model being tested (independent call, no conversation history)
+    response = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        messages=[{
+            "role": "user",
+            "content": prompt
+        }]
+    )
+
+    agent_response = response.content[0].text
+
+    # Grade this step using Sonnet
+    grade_prompt = f"""Grade the following response against the rubric.
+
+RESPONSE TO GRADE:
+{agent_response}
+
+RUBRIC:
+{rubric}"""
+
+    grade_response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": grade_prompt
+        }]
+    )
+
+    grade_text = grade_response.content[0].text
+
+    # Parse result
+    passed = "pass" in grade_text.lower().split("\n")[0]
+
+    return {
+        "step": step_idx + 1,
+        "name": step_name,
+        "passed": passed,
+        "response": agent_response,
+        "grade": grade_text,
+        "prompt": prompt,
+    }
+
+
+def run_progressive_evaluation(model: str = "claude-haiku-4-5"):
+    """
+    Run the 5-step progressive evaluation on a model IN PARALLEL.
+
+    Each step is independent - no cascading dependencies between steps.
 
     Args:
-        model: The model to test (e.g., "claude-haiku-4-5-20250514")
+        model: The model to test (e.g., "claude-haiku-4-5")
 
     Returns:
         dict with results for each step
     """
     client = anthropic.Anthropic()
 
-    results = {
-        "model": model,
-        "steps": [],
-        "conversation": [],
-        "total_passed": 0,
-    }
-
-    conversation_history = []
-
     print(f"\n{'='*60}")
-    print(f"PROGRESSIVE TITANS EVALUATION")
+    print(f"PROGRESSIVE TITANS EVALUATION (PARALLEL)")
     print(f"Model: {model}")
     print(f"{'='*60}")
+    print(f"\nRunning all 5 steps in parallel...")
 
-    for i, (step_name, prompt) in enumerate(PROMPTS):
+    # Run all 5 steps in parallel using ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for i, (step_name, prompt) in enumerate(PROMPTS):
+            future = executor.submit(
+                _run_single_step,
+                client, model, i, step_name, prompt, RUBRICS[i]
+            )
+            futures.append(future)
+
+        # Collect results as they complete
+        step_results = [f.result() for f in futures]
+
+    # Sort by step number to ensure correct order
+    step_results.sort(key=lambda x: x["step"])
+
+    # Print results
+    for step in step_results:
         print(f"\n{'='*60}")
-        print(f"{step_name}")
+        print(f"{step['name']}")
         print(f"{'='*60}")
         print(f"\n--- Prompt ---")
-        print(prompt[:500] + "..." if len(prompt) > 500 else prompt)
-
-        # Add user message to conversation
-        conversation_history.append({
-            "role": "user",
-            "content": prompt
-        })
-
-        # Get response from model being tested
+        prompt_text = step['prompt']
+        print(prompt_text[:500] + "..." if len(prompt_text) > 500 else prompt_text)
         print(f"\n--- {model} Response ---")
-        response = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            messages=conversation_history
-        )
+        response_text = step['response']
+        print(response_text[:1500] + "..." if len(response_text) > 1500 else response_text)
+        print(f"\n--- Grade ---")
+        print(step['grade'])
 
-        agent_response = response.content[0].text
-        print(agent_response[:1500] + "..." if len(agent_response) > 1500 else agent_response)
-
-        # Add assistant response to conversation
-        conversation_history.append({
-            "role": "assistant",
-            "content": agent_response
-        })
-
-        # Grade this step using Sonnet
-        print(f"\n--- Grading Step {i+1} ---")
-
-        grade_prompt = f"""Grade the following response against the rubric.
-
-RESPONSE TO GRADE:
-{agent_response}
-
-RUBRIC:
-{RUBRICS[i]}"""
-
-        grade_response = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
-            max_tokens=1024,
-            messages=[{
-                "role": "user",
-                "content": grade_prompt
-            }]
-        )
-
-        grade_text = grade_response.content[0].text
-        print(grade_text)
-
-        # Parse result
-        passed = "pass" in grade_text.lower().split("\n")[0]
-
-        step_result = {
-            "step": i + 1,
-            "name": step_name,
-            "passed": passed,
-            "response": agent_response,
-            "grade": grade_text,
-        }
-        results["steps"].append(step_result)
-
-        if passed:
-            results["total_passed"] += 1
-
-        results["conversation"] = conversation_history.copy()
+    # Compute totals
+    total_passed = sum(1 for s in step_results if s["passed"])
 
     # Final summary
     print(f"\n{'='*60}")
     print("FINAL RESULTS")
     print(f"{'='*60}")
 
-    for step in results["steps"]:
+    for step in step_results:
         status = "✓ PASS" if step["passed"] else "✗ FAIL"
         print(f"Step {step['step']}: {step['name']} - {status}")
 
-    print(f"\nTotal: {results['total_passed']}/5 steps passed")
+    print(f"\nTotal: {total_passed}/5 steps passed")
 
     # Overall pass requires at least 4/5 steps
-    overall_pass = results["total_passed"] >= 4
+    overall_pass = total_passed >= 4
     print(f"Overall: {'PASS' if overall_pass else 'FAIL'} (need 4/5)")
 
-    results["overall_pass"] = overall_pass
+    results = {
+        "model": model,
+        "steps": step_results,
+        "total_passed": total_passed,
+        "overall_pass": overall_pass,
+    }
 
     return results
 
@@ -300,7 +310,7 @@ def run_comparison(models: list[str] = None):
     """
     if models is None:
         models = [
-            "claude-haiku-4-5-20250514",
+            "claude-haiku-4-5",
             # Add other models to compare
         ]
 
