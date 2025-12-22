@@ -17,8 +17,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 
 # --- THE 5-STEP PROGRESSIVE PROMPTS ---
-# Each prompt is SELF-CONTAINED and can be evaluated independently
-# Later steps get brief Titans paper hints for necessary context
+# Each prompt is SELF-CONTAINED and requires genuine reasoning
+# No paper references - agent must derive the architecture independently
 
 STEP_1_PROMPT = """I want to add a memory system to a Transformer that can handle very long sequences without the quadratic attention cost.
 
@@ -31,7 +31,7 @@ If you update this memory for every token, won't it get overwhelmed with noise?
 What's the problem here and how would you address it?"""
 
 STEP_3_PROMPT = """Consider a neural memory system for Transformers where:
-- Memory is stored as a matrix M (like fast weights)
+- Memory is stored as a matrix M
 - We need to control which tokens get written to memory
 
 Give me the complete mathematical update rule for this memory.
@@ -42,17 +42,14 @@ STEP_4_PROMPT = """Consider a Transformer block that has BOTH:
 1. Standard attention (for short-term context)
 2. A neural memory module (for long-term storage)
 
-How do you combine their outputs in a single block? The Titans paper uses a "Memory as a Gate" approach."""
+How do you combine their outputs in a single block?"""
 
-STEP_5_PROMPT = """Implement a Titans-style neural memory module in PyTorch.
+STEP_5_PROMPT = """Implement a neural memory module in PyTorch that:
+- Uses a matrix M to store information
+- Updates M recurrently as it processes each token
+- Can be combined with standard attention in a Transformer block
 
-Context from the Titans paper:
-- Memory is a matrix M that stores key-value associations via outer product: V ⊗ K^T
-- A "surprise" gate (sigmoid) controls how much each token writes to memory
-- Memory decays over time with a learnable parameter
-- The update rule: M_new = decay * M_old + surprise * (V ⊗ K^T)
-
-Give me a complete, runnable `NeuralMemory` module and a `MemoryBlock` that combines attention with memory using learned gating."""
+Give me complete, runnable code for a `NeuralMemory` module and a `MemoryBlock` that uses both attention and memory."""
 
 
 PROMPTS = [
@@ -65,106 +62,101 @@ PROMPTS = [
 
 
 # --- GRADING RUBRICS FOR EACH STEP ---
+# These rubrics are STRICT - we want Haiku to fail 60-90% of the time
 
-STEP_1_RUBRIC = """Evaluate if the response proposes a HIGH-DIMENSIONAL memory structure.
+STEP_1_RUBRIC = """Evaluate if the response proposes a HIGH-DIMENSIONAL memory structure that uses OUTER PRODUCTS.
 
-**PASS criteria (must meet at least one):**
-- Proposes a "matrix" or "weight matrix" as memory state (not just a vector)
-- Mentions "fast weights" or "dynamic linear layer"
-- Suggests "outer product" to store key-value associations
-- Proposes memory with dimensions like (d x d) or (memory_size x d_model)
+**PASS criteria (must meet BOTH):**
+1. Proposes memory as a matrix M with dimensions like (d x d) - NOT just (memory_slots x d)
+2. Explicitly mentions using "outer product" (v ⊗ k^T) to store key-value associations
 
-**FAIL criteria:**
-- Only proposes a larger hidden vector (e.g., "use a 4096-dim vector")
-- Suggests just "more attention heads" or "more layers"
-- Proposes standard LSTM/GRU without matrix-based memory
-- No concrete mathematical structure proposed
+**FAIL criteria (any of these = FAIL):**
+- Proposes memory as (n x d) where n is just number of slots - this is just a list of vectors
+- Uses standard attention over memory slots instead of outer product
+- Proposes retrieval-based memory (like memory networks) instead of fast weights
+- No explicit outer product formulation
+
+Be STRICT. A memory bank of shape (k x d) is NOT the same as a fast-weight matrix (d x d).
 
 Respond with exactly:
 STEP 1: PASS or FAIL
 Reason: [brief explanation]"""
 
-STEP_2_RUBRIC = """Evaluate if the response proposes a FILTERING mechanism for memory updates.
+STEP_2_RUBRIC = """Evaluate if the response proposes a SURPRISE-BASED filtering mechanism.
 
-**PASS criteria (must meet at least one):**
-- Mentions "importance score" or "relevance gate"
-- Proposes "surprise" or "novelty" detection
-- Suggests using "prediction error" to filter updates
-- Proposes a learned gate (sigmoid, softmax) to control write strength
-- Mentions comparing input to existing memory to decide updates
+**PASS criteria (must meet BOTH):**
+1. Proposes measuring "surprise" or "novelty" - how unexpected the input is
+2. This surprise metric is used to GATE memory updates (not just filter/select)
 
-**FAIL criteria:**
-- Suggests writing every token equally to memory
-- Only proposes periodic clearing/reset of memory
-- Relies on external signals to decide what to remember
-- No filtering mechanism proposed
+**FAIL criteria (any of these = FAIL):**
+- Only proposes a generic "importance" or "relevance" gate without surprise/novelty
+- Uses attention scores as the gate (this is relevance, not surprise)
+- Gate is based on position or frequency, not content unpredictability
+- No mechanism that measures how "surprising" or "novel" the input is
+
+The key insight is: surprise = "how wrong was my prediction?" NOT "how relevant is this?"
 
 Respond with exactly:
 STEP 2: PASS or FAIL
 Reason: [brief explanation]"""
 
-STEP_3_RUBRIC = """Evaluate if the response proposes the correct UPDATE RULE with decay and surprise.
+STEP_3_RUBRIC = """Evaluate if the response proposes the EXACT update rule with BOTH decay AND surprise.
 
-**PASS criteria (must meet ALL):**
-1. Proposes approximating "surprise" without backprop (e.g., prediction error, reconstruction error, or learned gate)
-2. Includes a DECAY term for forgetting (like η or (1-η) multiplied with old state)
-3. The update rule has form: M_new = decay * M_old + surprise * new_data
-   Or equivalent: M = (1-η)M + s·(V⊗K)
+**PASS criteria (must meet ALL THREE):**
+1. Has explicit DECAY term: M_new = decay * M_old + ... (where decay < 1)
+2. Has explicit SURPRISE term that gates the update magnitude
+3. Uses OUTER PRODUCT for the update: decay * M + surprise * (V ⊗ K^T)
 
-**PARTIAL PASS (3/5 points):**
-- Has decay but no surprise mechanism
-- Has surprise but no decay
-- Formula structure is close but missing key component
+**FAIL criteria (any of these = FAIL):**
+- Missing decay term (just M_new = M + update)
+- Missing surprise gating (just M_new = decay*M + update)
+- No outer product (V ⊗ K^T) in the formula
+- Uses interpolation like M = (1-W)*M + W*V without outer product
+- Has decay OR surprise but not BOTH
 
-**FAIL criteria:**
-- Hard if/else rules instead of soft gating
-- No decay/forgetting mechanism
-- Cannot connect surprise to update magnitude
-- No mathematical formula proposed
+This is strict: the formula MUST be: M_new = decay * M_old + surprise * (V ⊗ K^T)
+Or equivalent with both components clearly present.
 
 Respond with exactly:
 STEP 3: PASS or FAIL
 Reason: [brief explanation]"""
 
-STEP_4_RUBRIC = """Evaluate if the response proposes correct FUSION/GATING of attention and memory.
+STEP_4_RUBRIC = """Evaluate if the response proposes LEARNED SIGMOID GATING for fusion.
 
-**PASS criteria:**
-- Proposes a LEARNED gate (not hardcoded)
-- Uses sigmoid activation for soft gating
-- Formula like: g = sigmoid(W[attn; mem]) then out = g*attn + (1-g)*mem
-- Or equivalent weighted combination with learned parameters
+**PASS criteria (must meet ALL):**
+1. Uses sigmoid activation specifically (not softmax, not learned weights alone)
+2. Computes gate from BOTH attention and memory outputs: g = sigmoid(W[attn; mem])
+3. Final output uses complementary weighting: out = g*attn + (1-g)*mem
 
-**FAIL criteria:**
-- Suggests simple addition: output = attention + memory
-- Suggests concatenation without learned weighting
-- Proposes alternating between sources (not blending)
-- No gating mechanism proposed
+**FAIL criteria (any of these = FAIL):**
+- Uses simple addition or concatenation
+- Uses only attention or only memory to compute the gate (must use both)
+- Uses softmax instead of sigmoid
+- Uses fixed/hardcoded mixing weights
+- Missing the (1-g) complementary term
+
+The exact pattern required: g = sigmoid(linear([attn, mem])), then g*attn + (1-g)*mem
 
 Respond with exactly:
 STEP 4: PASS or FAIL
 Reason: [brief explanation]"""
 
-STEP_5_RUBRIC = """Evaluate the FINAL IMPLEMENTATION code.
+STEP_5_RUBRIC = """Evaluate the FINAL IMPLEMENTATION code. Be VERY STRICT.
 
-Grade each component (1 point each, need 5/6 to pass):
+**Must have ALL 6 components to PASS:**
 
 1. **NeuralMemory class** - Proper nn.Module with forward method
-2. **Surprise gate** - Sigmoid-based learned gate for update strength
-3. **Learnable decay** - nn.Parameter for memory fade
-4. **Outer product** - V⊗K^T computed correctly (bmm or einsum)
-5. **Recurrent loop** - Step-by-step updates (for t in range...)
-6. **Fusion gate** - Learned gate combining attention and memory
+2. **Surprise gate** - Uses sigmoid to compute surprise from prediction error or learned gate
+3. **Learnable decay** - nn.Parameter for memory fade (not hardcoded)
+4. **Outer product** - V⊗K^T computed via torch.bmm or einsum (not matmul on batched vectors)
+5. **Recurrent loop** - Explicit for loop: "for t in range(seq_len)" updating state each step
+6. **Fusion gate** - g = sigmoid(...) then g*attn + (1-g)*mem pattern
 
-Also check if they mention appropriate evaluation:
-- "Needle in a Haystack" test
-- BABILong benchmark
-- Long-range retrieval tasks
-- Passkey retrieval
+**FAIL if missing ANY of these.** Partial credit does not count as pass.
 
 Respond with exactly:
 STEP 5: PASS or FAIL
 Components passed: X/6
-Evaluation mentioned: Yes/No
 Reason: [brief explanation]"""
 
 RUBRICS = [
