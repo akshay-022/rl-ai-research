@@ -60,7 +60,7 @@ PROMPT = f"""You are a machine learning engineer. Your task is to convert a sing
 Convert the training script to use PyTorch FSDP. Your solution must:
 
 1. **Initialize distributed training**: Set up the process group with NCCL backend
-2. **Wrap the model with FSDP**: Use FullyShardedDataParallel with proper wrapping policy
+2. **Wrap the model with FSDP**: Use FullyShardedDataParallel with a custom wrapping policy
 3. **Use DistributedSampler**: Ensure each GPU gets different data
 4. **Handle checkpointing correctly**: Only save on rank 0, use proper FSDP state dict methods
 5. **Clean up**: Destroy the process group at the end
@@ -68,7 +68,10 @@ Convert the training script to use PyTorch FSDP. Your solution must:
 ## Requirements
 
 - Use `torch.distributed.fsdp.FullyShardedDataParallel`
-- Use `transformer_auto_wrap_policy` to wrap TransformerBlock layers
+- **IMPORTANT**: Use `lambda_auto_wrap_policy` with a custom lambda function that wraps modules based on:
+  - Module type: wrap all `TransformerBlock` layers
+  - Parameter count: wrap any module with more than 1,000,000 parameters
+  - Do NOT use `transformer_auto_wrap_policy` - implement the logic yourself with `lambda_auto_wrap_policy`
 - Create the optimizer AFTER wrapping with FSDP
 - Call `sampler.set_epoch(epoch)` in the training loop
 - Only print/log on rank 0 to avoid duplicate output
@@ -180,42 +183,49 @@ def grading_func(result: Any) -> bool:
         "DistributedSampler usage"
     ))
 
-    # 5. Wrapping policy for TransformerBlock
+    # 5. Custom lambda wrap policy (NOT transformer_auto_wrap_policy)
     checks.append(check_code_has_pattern(
         code,
-        r"transformer_auto_wrap_policy|auto_wrap_policy.*TransformerBlock|TransformerBlock.*auto_wrap",
-        "Auto wrap policy for TransformerBlock"
+        r"lambda_auto_wrap_policy",
+        "lambda_auto_wrap_policy usage"
     ))
 
-    # 6. set_epoch call
+    # 6. Custom lambda function with parameter count check
+    checks.append(check_code_has_pattern(
+        code,
+        r"(\.numel\(\)|num_params|parameter.*count|1_?000_?000|1000000)",
+        "Parameter count check in wrap policy"
+    ))
+
+    # 7. set_epoch call
     checks.append(check_code_has_pattern(
         code,
         r"sampler\.set_epoch\s*\(|\.set_epoch\s*\(\s*epoch",
         "sampler.set_epoch() call"
     ))
 
-    # 7. Rank 0 checkpoint saving
+    # 8. Rank 0 checkpoint saving
     checks.append(check_code_has_pattern(
         code,
         r"(get_rank\s*\(\s*\)\s*==\s*0|rank\s*==\s*0).*save|if.*rank.*0.*:.*\n.*save",
         "Checkpoint saving on rank 0 only"
     ))
 
-    # 8. FSDP state dict handling
+    # 9. FSDP state dict handling
     checks.append(check_code_has_pattern(
         code,
         r"state_dict_type|StateDictType|FullStateDictConfig",
         "FSDP state dict handling"
     ))
 
-    # 9. Process group cleanup
+    # 10. Process group cleanup
     checks.append(check_code_has_pattern(
         code,
         r"destroy_process_group\s*\(",
         "destroy_process_group() call"
     ))
 
-    # 10. LOCAL_RANK handling
+    # 11. LOCAL_RANK handling
     checks.append(check_code_has_pattern(
         code,
         r"LOCAL_RANK|local_rank",
@@ -234,9 +244,8 @@ def grading_func(result: Any) -> bool:
 
     print(f"\nScore: {passed}/{total}")
 
-    # Require at least 8/10 checks to pass
-    # This allows some flexibility while ensuring core concepts are present
-    threshold = 8
+    # Require at least 9/11 checks to pass
+    threshold = 9
     if passed >= threshold:
         print(f"PASS: {passed}/{total} checks passed (threshold: {threshold})")
         return True

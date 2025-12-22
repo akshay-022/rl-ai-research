@@ -144,7 +144,10 @@ HAIKU_PROMPT = """Convert this single-GPU PyTorch training script to use FSDP (F
 Requirements:
 1. Use torch.distributed and FSDP from torch.distributed.fsdp
 2. Use DistributedSampler instead of shuffle=True
-3. Use transformer_auto_wrap_policy to wrap TransformerBlock layers
+3. **IMPORTANT**: Use `lambda_auto_wrap_policy` with a custom lambda function that wraps modules based on:
+   - Module type: wrap all TransformerBlock layers
+   - Parameter count: wrap any module with more than 1,000,000 parameters
+   - Do NOT use transformer_auto_wrap_policy - implement the logic yourself
 4. Handle LOCAL_RANK environment variable
 5. Call sampler.set_epoch(epoch) in the training loop
 6. Save checkpoint only on rank 0 with proper FSDP state dict handling
@@ -161,17 +164,18 @@ Return ONLY the converted Python code, no explanations."""
 
 SONNET_EVAL_PROMPT = """You are evaluating an FSDP implementation. Check if this code correctly implements FSDP distributed training.
 
-Grade each of these 10 requirements (1 point each):
+Grade each of these 11 requirements (1 point each):
 1. dist.init_process_group() is called
 2. FSDP is imported from torch.distributed.fsdp
 3. Model is wrapped with FSDP()
 4. DistributedSampler is used
-5. transformer_auto_wrap_policy is used with TransformerBlock
-6. sampler.set_epoch(epoch) is called in training loop
-7. Checkpoint saving checks rank == 0
-8. FSDP state_dict_type context is used for saving
-9. dist.destroy_process_group() is called
-10. LOCAL_RANK environment variable is read
+5. lambda_auto_wrap_policy is used (NOT transformer_auto_wrap_policy)
+6. Custom lambda function checks for TransformerBlock type
+7. Custom lambda function checks parameter count (>1M params)
+8. sampler.set_epoch(epoch) is called in training loop
+9. Checkpoint saving checks rank == 0
+10. FSDP state_dict_type context is used for saving
+11. dist.destroy_process_group() is called
 
 Code to evaluate:
 ```python
@@ -179,8 +183,8 @@ Code to evaluate:
 ```
 
 For each requirement, say PASS or FAIL with a brief reason.
-Then give a final score out of 10.
-Finally, state if this would be considered a PASSING implementation (8+ points)."""
+Then give a final score out of 11.
+Finally, state if this would be considered a PASSING implementation (9+ points)."""
 
 
 def main():

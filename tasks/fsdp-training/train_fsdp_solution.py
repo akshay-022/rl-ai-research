@@ -21,7 +21,7 @@ from torch.distributed.fsdp import (
     FullStateDictConfig,
     StateDictType,
 )
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch.distributed.fsdp.wrap import lambda_auto_wrap_policy
 from functools import partial
 import argparse
 import time
@@ -85,10 +85,20 @@ def train(
         num_params = sum(p.numel() for p in model.parameters())
         print(f"Model has {num_params:,} parameters")
 
-    # Define auto wrap policy - wrap each TransformerBlock
+    # Define custom wrap policy using lambda_auto_wrap_policy
+    # Wrap TransformerBlock layers OR modules with >1M parameters
+    def should_wrap_module(module: nn.Module) -> bool:
+        if isinstance(module, TransformerBlock):
+            return True
+        # Count only direct parameters (not from children)
+        num_params = sum(p.numel() for p in module.parameters(recurse=False))
+        if num_params > 1_000_000:
+            return True
+        return False
+
     auto_wrap_policy = partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={TransformerBlock},
+        lambda_auto_wrap_policy,
+        lambda_fn=should_wrap_module,
     )
 
     # Optional: Mixed precision for efficiency
