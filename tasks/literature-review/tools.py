@@ -32,7 +32,7 @@ def _rate_limit():
 
 
 def _request_with_retry(url, headers=None, max_retries=3, timeout=15):
-    """Make HTTP request with retry logic for rate limits."""
+    """Make HTTP request with retry logic for rate limits (429 only)."""
     _rate_limit()
 
     for attempt in range(max_retries):
@@ -41,17 +41,13 @@ def _request_with_retry(url, headers=None, max_retries=3, timeout=15):
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8")
         except urllib.error.HTTPError as e:
-            if e.code == 429:  # Rate limited
+            if e.code == 429:  # Rate limited - retry with backoff
                 wait_time = (attempt + 1) * 2  # Exponential backoff: 2, 4, 6 seconds
                 print(f"  ⏳ Rate limited, waiting {wait_time}s...")
                 time.sleep(wait_time)
                 continue
-            elif e.code >= 500:  # Server error
-                wait_time = (attempt + 1) * 1
-                print(f"  ⚠️ Server error {e.code}, retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                continue
             else:
+                # Don't retry other errors (including 500s)
                 raise
         except Exception as e:
             if attempt < max_retries - 1:
@@ -318,7 +314,7 @@ def _extract_introduction_from_pdf(pdf_url):
             except ImportError:
                 return None, "PDF parsing libraries not available (install PyPDF2 or pdfplumber)"
 
-        # Download PDF with retry logic
+        # Download PDF with retry logic (only retry 429s)
         _rate_limit()
         max_retries = 3
         pdf_data = None
@@ -329,9 +325,9 @@ def _extract_introduction_from_pdf(pdf_url):
                     pdf_data = resp.read()
                 break
             except urllib.error.HTTPError as e:
-                if e.code == 429 or e.code >= 500:
+                if e.code == 429:  # Only retry rate limits
                     wait_time = (attempt + 1) * 2
-                    print(f"  ⏳ PDF download error {e.code}, retrying in {wait_time}s...")
+                    print(f"  ⏳ PDF rate limited, waiting {wait_time}s...")
                     time.sleep(wait_time)
                     continue
                 raise
