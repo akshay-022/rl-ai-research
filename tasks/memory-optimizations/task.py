@@ -39,9 +39,7 @@ with open(MODEL_CODE_PATH) as f:
 
 
 # The challenge prompt
-PROMPT = f"""You are an expert machine learning engineer specializing in GPU memory optimization. Your goal is to create the most memory-efficient training script possible.
-
-Your task is to optimize the memory usage of a PyTorch training script for a deep transformer model.
+PROMPT = f"""You are a machine learning engineer. Your task is to optimize the memory usage of a PyTorch training script.
 
 ## Baseline Training Script (train_baseline.py)
 
@@ -57,42 +55,23 @@ Your task is to optimize the memory usage of a PyTorch training script for a dee
 
 ## Your Task
 
-Optimize the training script to MAXIMIZE memory savings. Apply as many memory optimization techniques as possible. The more optimizations you apply, the better your score.
+Optimize the training script to reduce GPU memory usage. Apply memory optimization techniques you know.
 
-## Required Optimizations (you MUST include ALL of these)
+Some common techniques include: mixed precision training, gradient checkpointing, efficient attention, gradient accumulation, optimizer optimizations, memory management, etc.
 
-1. **Mixed Precision Training (AMP)**: Use torch.cuda.amp.autocast and GradScaler
-2. **Gradient Checkpointing**: Use torch.utils.checkpoint to trade compute for memory
-3. **Memory-Efficient Attention**: Use F.scaled_dot_product_attention (SDPA/FlashAttention)
+## Important Notes
 
-## Additional Optimizations (apply AS MANY as possible)
-
-You MUST apply at least 2 of these additional techniques. The more you apply, the better:
-
-4. **Gradient Accumulation**: Use accumulation_steps to simulate larger batches with smaller micro-batches
-5. **Memory-efficient Optimizer**: Use set_to_none=True in zero_grad(), or fused=True/foreach=True in optimizer
-6. **Explicit Memory Management**: Use torch.cuda.empty_cache() and del intermediate tensors (del outputs, del loss)
-7. **CPU Offloading / Pin Memory**: Use pin_memory=True in DataLoader
-8. **Micro-batching**: Define micro_batch_size or effective_batch_size variables
-9. **In-place Operations**: Use inplace=True for activations where possible
-10. **torch.compile**: Use torch.compile() for kernel fusion and optimization
-11. **Memory Format**: Use channels_last memory format if applicable
+- For mixed precision: `from torch.cuda.amp import autocast, GradScaler` then `with autocast():` - do NOT pass device_type to autocast
+- Do NOT modify the model architecture in model.py - only optimize the training script
+- Keep all the original command line arguments working
 
 ## Requirements
 
-Your optimized script must:
-1. Include ALL 3 required optimizations (AMP, Gradient Checkpointing, SDPA)
-2. Include AT LEAST 2 additional optimizations from the list above
-3. Be valid, runnable Python code
-4. Include brief comments explaining each optimization
+- Your code must be valid, runnable Python
+- Apply at least 5 different memory optimization techniques
+- The script must still train the model correctly
 
-## IMPORTANT
-
-Do NOT stop at just the minimum. Apply every optimization technique you can. A script with 5+ total optimizations is good. A script with 7+ optimizations is excellent.
-
-## Submission
-
-Submit your complete optimized training script as a string using submit_answer.
+Submit your complete optimized training script using submit_answer.
 """
 
 
@@ -134,7 +113,7 @@ def test_code_runs(code: str) -> tuple[bool, str]:
     then runs it with minimal settings to verify it compiles and executes.
     """
     import subprocess
-    import tempfile
+    import sys
 
     # Create temp file in task directory so 'from model import ...' works
     temp_path = TASK_DIR / "temp_optimized_train.py"
@@ -146,9 +125,10 @@ def test_code_runs(code: str) -> tuple[bool, str]:
 
         # Run with minimal settings: 1 epoch, tiny dataset, small model
         # Use a timeout to prevent hanging
+        # Use sys.executable to get the current Python interpreter
         result = subprocess.run(
             [
-                "python", str(temp_path),
+                sys.executable, str(temp_path),
                 "--epochs", "1",
                 "--batch-size", "2",
                 "--num-samples", "10",
@@ -188,13 +168,9 @@ def grading_func(result: Any) -> bool:
     """
     Validates the memory-optimized training script.
 
-    Checks for various memory optimization techniques.
-    The solution must beat a baseline that already has:
-    - Mixed Precision (AMP)
-    - Gradient Checkpointing
-    - SDPA (Scaled Dot Product Attention)
-
-    To pass, the solution needs these PLUS additional optimizations.
+    Checks:
+    1. Code runs without errors
+    2. At least 5 memory optimization techniques are applied
 
     Returns:
         True if the script meets all requirements, False otherwise
@@ -229,133 +205,39 @@ def grading_func(result: Any) -> bool:
         print(f"✗ {run_msg}")
         return False
 
-    # === BASELINE OPTIMIZATIONS (Required - these are what we compare against) ===
-    baseline_checks = []
+    # 3. Count optimization techniques
+    print("\n=== Optimization Detection ===\n")
 
-    # Mixed Precision (AMP)
-    baseline_checks.append(check_code_has_pattern(
-        code,
-        r"(torch\.cuda\.amp|autocast|GradScaler|torch\.amp)",
-        "Mixed Precision Training (AMP)"
-    ))
+    optimizations = [
+        (r"(torch\.cuda\.amp|autocast|GradScaler|torch\.amp)", "Mixed Precision (AMP)"),
+        (r"(checkpoint|torch\.utils\.checkpoint|checkpoint_sequential|gradient_checkpointing)", "Gradient Checkpointing"),
+        (r"(scaled_dot_product_attention|F\.scaled_dot_product_attention|sdpa|flash_attention|FlashAttention)", "SDPA/FlashAttention"),
+        (r"(accumulation_steps\s*[=:]|gradient_accumulation|%\s*accumulation|accum_steps\s*=)", "Gradient Accumulation"),
+        (r"(bitsandbytes|bnb\.optim|8bit|Adafactor|fused\s*=\s*True|foreach\s*=\s*True|set_to_none\s*=\s*True)", "Memory-efficient Optimizer"),
+        (r"(torch\.cuda\.empty_cache\(\)|del\s+(outputs|loss|logits|activations)|\.detach\(\)\.cpu\(\))", "Explicit Memory Management"),
+        (r"(offload.*cpu|pin_memory\s*=\s*True|\.cpu\(\).*\.to\(|cpu_offload)", "CPU Offloading / Pin Memory"),
+        (r"(micro_batch_size\s*=|effective_batch_size|batch_size\s*//\s*accum|batch_size\s*/\s*accumulation)", "Micro-batching"),
+        (r"(inplace\s*=\s*True|\.add_\(|\.mul_\(|\.zero_\(|grad\.add_)", "In-place Operations"),
+        (r"(torch\.compile\s*\(|model\s*=.*compile|compiled_model)", "torch.compile"),
+        (r"(\.to\(memory_format\s*=|channels_last|contiguous_format\s*=)", "Memory Format Optimization"),
+    ]
 
-    # Gradient Checkpointing
-    baseline_checks.append(check_code_has_pattern(
-        code,
-        r"(checkpoint|torch\.utils\.checkpoint|checkpoint_sequential|gradient_checkpointing)",
-        "Gradient Checkpointing"
-    ))
+    count = 0
+    for pattern, name in optimizations:
+        found = bool(re.search(pattern, code, re.MULTILINE | re.DOTALL))
+        status = "✓" if found else "✗"
+        print(f"{status} {name}")
+        if found:
+            count += 1
 
-    # SDPA / FlashAttention
-    baseline_checks.append(check_code_has_pattern(
-        code,
-        r"(scaled_dot_product_attention|F\.scaled_dot_product_attention|sdpa|flash_attention|FlashAttention)",
-        "Scaled Dot Product Attention (SDPA/FlashAttention)"
-    ))
+    print(f"\nTotal optimizations: {count}/11")
 
-    # === ADDITIONAL OPTIMIZATIONS (Need at least 2 to beat baseline) ===
-    additional_checks = []
-
-    # Gradient Accumulation (must be used in code, not just mentioned)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(accumulation_steps\s*[=:]|gradient_accumulation|%\s*accumulation|accum_steps\s*=)",
-        "Gradient Accumulation"
-    ))
-
-    # Memory-efficient optimizer states (8-bit Adam, Adafactor, etc.)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(bitsandbytes|bnb\.optim|8bit|Adafactor|fused\s*=\s*True|foreach\s*=\s*True|set_to_none\s*=\s*True)",
-        "Memory-efficient Optimizer"
-    ))
-
-    # Activation memory optimization (del intermediate, empty_cache, etc.)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(torch\.cuda\.empty_cache\(\)|del\s+(outputs|loss|logits|activations)|\.detach\(\)\.cpu\(\))",
-        "Explicit Memory Management"
-    ))
-
-    # CPU offloading / pin memory (actual usage, not just method definition)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(offload.*cpu|pin_memory\s*=\s*True|\.cpu\(\).*\.to\(|cpu_offload)",
-        "CPU Offloading / Pin Memory"
-    ))
-
-    # Smaller batch with accumulation (actual micro-batch variable usage)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(micro_batch_size\s*=|effective_batch_size|batch_size\s*//\s*accum|batch_size\s*/\s*accumulation)",
-        "Micro-batching Strategy"
-    ))
-
-    # In-place operations (actual usage in optimizer or tensor ops)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(inplace\s*=\s*True|\.add_\(|\.mul_\(|\.zero_\(|grad\.add_)",
-        "In-place Operations"
-    ))
-
-    # Model compilation / torch.compile (actual usage)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(torch\.compile\s*\(|model\s*=.*compile|compiled_model)",
-        "torch.compile Optimization"
-    ))
-
-    # Channels last memory format (actual usage)
-    additional_checks.append(check_code_has_pattern(
-        code,
-        r"(\.to\(memory_format\s*=|channels_last|contiguous_format\s*=)",
-        "Memory Format Optimization"
-    ))
-
-    # Print results
-    print("\n=== Memory Optimization Task Grading ===\n")
-
-    print("--- Baseline Optimizations (Required) ---")
-    baseline_passed = 0
-    for success, msg in baseline_checks:
-        print(msg)
-        if success:
-            baseline_passed += 1
-
-    print(f"\nBaseline Score: {baseline_passed}/{len(baseline_checks)}")
-
-    print("\n--- Additional Optimizations (Need 2+ to beat baseline) ---")
-    additional_passed = 0
-    for success, msg in additional_checks:
-        print(msg)
-        if success:
-            additional_passed += 1
-
-    print(f"\nAdditional Score: {additional_passed}/{len(additional_checks)}")
-
-    # === GRADING LOGIC ===
-    # Must have ALL 3 baseline optimizations
-    # Must have at least 2 additional optimizations to "beat" the baseline
-
-    all_baseline = baseline_passed == len(baseline_checks)
-    enough_additional = additional_passed >= 2
-
+    # 4. Check if enough optimizations
     print("\n=== Final Evaluation ===")
 
-    if not all_baseline:
-        print(f"FAIL: Missing baseline optimizations ({baseline_passed}/{len(baseline_checks)})")
-        print("       Your solution must include: AMP, Gradient Checkpointing, and SDPA")
+    if count >= 5:
+        print(f"PASS: Applied {count} memory optimizations (≥5 required)")
+        return True
+    else:
+        print(f"FAIL: Only {count} optimizations detected (need at least 5)")
         return False
-
-    if not enough_additional:
-        print(f"FAIL: Not enough additional optimizations ({additional_passed}/2 required)")
-        print("       You matched the baseline but didn't beat it!")
-        print("       Add more optimizations like: gradient accumulation, 8-bit optimizers,")
-        print("       explicit memory management, CPU offloading, torch.compile, etc.")
-        return False
-
-    total_optimizations = baseline_passed + additional_passed
-    print(f"PASS: Applied {total_optimizations} memory optimizations!")
-    print(f"      Baseline: {baseline_passed}/3 ✓")
-    print(f"      Additional: {additional_passed}+ ✓ (beats baseline!)")
-    return True

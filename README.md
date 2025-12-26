@@ -132,11 +132,32 @@ Given a simple Transformer and the instruction to implement the **Titans archite
 - **Pass threshold**: 6/6 (all criteria must pass)
 - Reference solution provided in `titans_solution.py`
 
+### Progressive Evaluation Results (10 runs)
+
+Tests agent's ability to derive Titans architecture concepts from first principles:
+
+| Step | Concept | Pass Rate | Why It Fails |
+|------|---------|-----------|--------------|
+| 1 | Memory Structure (associative matrix) | 0% | Haiku proposes vector-based K,V caches instead of associative matrix memory with outer products (M = M + v⊗k^T) |
+| 2 | Filtering/Surprise mechanism | 20% | Haiku says "gating" or "importance" but doesn't specifically propose surprise/novelty-based filtering (prediction error) |
+| 3 | Update Rule with Decay | 10% | Haiku writes M_new = M + update (purely additive) instead of M_new = decay*M + update (with forgetting) |
+| 4 | Attention-Memory Fusion | 90% | Haiku usually gets the g*attn + (1-g)*mem pattern correct |
+| 5 | Full Implementation | 70% | Often missing 1-2 components: decay term, sequential loop, or outer product |
+
+**Overall Pass Rate: 0%** (requires 4/5 steps)
+
+This is intentionally difficult - the prompts are open-ended and require the agent to independently derive concepts like outer products, surprise-based gating, and decay mechanisms. The first 3 steps consistently fail because Haiku defaults to standard attention-style architectures rather than the specific Titans design patterns.
+
 ### Run Tests
 
 ```bash
 cd tasks/titan-paper-implementation
-python test_grading.py
+
+# Single evaluation with full output
+python progressive_eval.py
+
+# Multiple parallel evaluations
+python progressive_eval.py --multi 10
 ```
 
 ## FSDP Training Task
@@ -214,12 +235,29 @@ python test_grading.py
 
 ## Task Summary
 
-| Task | Purpose | Grading Method | Pass Threshold |
-|------|---------|----------------|----------------|
-| Literature Review | Research synthesis | LLM-as-Judge (Sonnet) | 7/10 |
-| Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL |
-| Titans Implementation | Paper → Code | LLM-as-Judge (Sonnet) | 6/6 |
-| FSDP Training | Distributed training | Regex checks | 9/11 |
-| Memory Optimizations | GPU memory reduction | Regex checks | 3/3 baseline + 2 additional |
+| Task | Purpose | Grading Method | Pass Threshold | Observed Success Rate |
+|------|---------|----------------|----------------|----------------------|
+| Literature Review | Research synthesis | LLM-as-Judge (Sonnet) | 7/10 | ~60-80% |
+| Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL | ~70% (avg score: 6.5/10) |
+| Titans Progressive | Derive architecture concepts | LLM-as-Judge (Sonnet) | 4/5 steps | **0%** (intentionally hard) |
+| FSDP Training | Distributed training | Regex checks | 9/11 | **100%** |
+| Memory Optimizations | GPU memory reduction | Regex checks | 5+ optimizations | ~90% |
+
+### Sample Results
+
+**Idea Proposal (Memory topic)**:
+- Haiku generated 3 ideas in ~43s (2 agent steps)
+- Sonnet extended thinking evaluated for ~120s
+- Individual scores: 5.75/10, 7.6/10, 6.2/10
+- Average: **6.52/10** → Verdict: **GOOD**
+
+**Literature Review**:
+- Haiku agent iteratively searched papers, extracted introductions/results
+- Scored 7/10 on strict rubric (requires specific papers + quantitative results)
+- Pass rate improves with more agent steps allowed
+
+**Titans Implementation**:
+- Haiku successfully implemented all 6 architectural components
+- Reference solution passes 6/6 criteria consistently
 
 All reference solutions and test scripts are included in each task directory.
