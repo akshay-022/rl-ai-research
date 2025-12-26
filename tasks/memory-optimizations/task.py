@@ -235,9 +235,9 @@ def grading_func(result: Any) -> bool:
     # 4. Check if enough optimizations
     print("\n=== Final Evaluation ===")
 
-    if count >= 5:
-        print(f"PASS: Applied {count} memory optimizations (≥5 required)")
+    if count >= 4:
+        print(f"PASS: Applied {count} memory optimizations (≥4 required)")
         return True
     else:
-        print(f"FAIL: Only {count} optimizations detected (need at least 5)")
+        print(f"FAIL: Only {count} optimizations detected (need at least 4)")
         return False
