@@ -6,8 +6,14 @@ Run this file to test the FSDP training task with an agent.
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 from typing import Any
+
+from dotenv import load_dotenv
+
+# Load .env from root folder
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, ToolUnionParam

@@ -192,26 +192,61 @@ For each approach, check:
 
 ## Response Format
 
+For each approach, you MUST provide:
+1. PASS or FAIL for topics
+2. PASS or FAIL for results
+3. A detailed explanation of WHY it passed or failed (what was mentioned vs what was missing)
+
 ```
 APPROACH 1 - Extended Context:
-- Topics: PASS/FAIL [list what was mentioned]
-- Results: PASS/FAIL [list specific numbers mentioned]
+- Topics: PASS/FAIL
+  - What was mentioned: [list specific papers/concepts found]
+  - What was missing: [list required items not found]
+  - Reasoning: [explain why this passes or fails]
+- Results: PASS/FAIL
+  - Numbers mentioned: [list any quantitative results found]
+  - What was missing: [list required numbers not found]
+  - Reasoning: [explain why this passes or fails]
 
 APPROACH 2 - RAG/Retrieval:
-- Topics: PASS/FAIL [list what was mentioned]
-- Results: PASS/FAIL [list specific numbers mentioned]
+- Topics: PASS/FAIL
+  - What was mentioned: [list specific papers/concepts found]
+  - What was missing: [list required items not found]
+  - Reasoning: [explain why this passes or fails]
+- Results: PASS/FAIL
+  - Numbers mentioned: [list any quantitative results found]
+  - What was missing: [list required numbers not found]
+  - Reasoning: [explain why this passes or fails]
 
 APPROACH 3 - Summarization:
-- Topics: PASS/FAIL [list what was mentioned]
-- Results: PASS/FAIL [list specific numbers mentioned]
+- Topics: PASS/FAIL
+  - What was mentioned: [list specific papers/concepts found]
+  - What was missing: [list required items not found]
+  - Reasoning: [explain why this passes or fails]
+- Results: PASS/FAIL
+  - Numbers mentioned: [list any quantitative results found]
+  - What was missing: [list required numbers not found]
+  - Reasoning: [explain why this passes or fails]
 
 APPROACH 4 - Memory Architectures:
-- Topics: PASS/FAIL [list what was mentioned]
-- Results: PASS/FAIL [list specific numbers mentioned]
+- Topics: PASS/FAIL
+  - What was mentioned: [list specific papers/concepts found]
+  - What was missing: [list required items not found]
+  - Reasoning: [explain why this passes or fails]
+- Results: PASS/FAIL
+  - Numbers mentioned: [list any quantitative results found]
+  - What was missing: [list required numbers not found]
+  - Reasoning: [explain why this passes or fails]
 
 APPROACH 5 - Parametric Memory:
-- Topics: PASS/FAIL [list what was mentioned]
-- Results: PASS/FAIL [list specific numbers mentioned]
+- Topics: PASS/FAIL
+  - What was mentioned: [list specific papers/concepts found]
+  - What was missing: [list required items not found]
+  - Reasoning: [explain why this passes or fails]
+- Results: PASS/FAIL
+  - Numbers mentioned: [list any quantitative results found]
+  - What was missing: [list required numbers not found]
+  - Reasoning: [explain why this passes or fails]
 
 TOTAL: X/10
 RESULT: PASS (if >= 7/10) / FAIL (if < 7/10)

@@ -77,6 +77,46 @@ The current literature reviews cover:
 - **Reference-based grading**: Compare against ground truth literature review
 - **Strict rubric**: Each criterion has clear PASS/FAIL conditions
 
+### Evaluation Results
+
+**Result: FAIL (6/10)** - Needed 7/10 to pass
+
+| Approach | Topics | Results | Score |
+|----------|--------|---------|-------|
+| 1. Extended Context | PASS | FAIL | 1/2 |
+| 2. RAG/Retrieval | PASS | FAIL | 1/2 |
+| 3. Summarization | PASS | FAIL | 1/2 |
+| 4. Memory Architectures | PASS | PASS | 2/2 |
+| 5. Parametric Memory | PASS | FAIL | 1/2 |
+
+#### Detailed Grading Breakdown
+
+**APPROACH 1 - Extended Context Windows:**
+- **Topics: PASS** - Mentioned Longformer, BigBird, RMT, and context limitations
+- **Results: FAIL** - No specific quantitative benchmarks. Said RMT handles "millions of tokens" but didn't cite the exact 2M token result or Gemini's 99% needle-in-haystack at 1M tokens
+
+**APPROACH 2 - RAG/Retrieval:**
+- **Topics: PASS** - Covered RAG architecture, RETRO, vector databases, embedding retrieval
+- **Results: FAIL** - No quantitative results. Did NOT mention RETRO's key finding: 7.5B model outperformed 175B Jurassic-1. Vague statements like "significant improvements" don't count.
+
+**APPROACH 3 - Summarization & Compression:**
+- **Topics: PASS** - Mentioned context compression, summarization approaches
+- **Results: FAIL** - No specific metrics. Just said compression "extends context" without numbers like "+3% BLEU" or specific human preference scores.
+
+**APPROACH 4 - Memory Architectures:**
+- **Topics: PASS** - Covered MemGPT, LongMem, Generative Agents, Zep
+- **Results: PASS** - Mentioned Zep outperforming MemGPT on DMR benchmark
+
+**APPROACH 5 - Parametric Memory:**
+- **Topics: PASS** - Covered ROME, MEMIT, catastrophic forgetting, continual learning
+- **Results: FAIL** - No specific numbers. Did NOT cite MEMIT's key result: edited 5000+ facts with minimal side effects.
+
+#### Why It Failed
+
+The agent gathered appropriate papers and covered all 5 approaches topically, but **consistently failed to extract and include quantitative results**. The rubric requires specific numbers (e.g., "99% accuracy at 1M tokens", "7.5B outperformed 175B") rather than vague improvements.
+
+**Root Cause**: Many `get_paper_results` calls returned HTTP 403 errors (papers behind paywalls), so the agent only had abstracts to work with. Abstracts rarely include specific benchmark numbers - those are in the full results sections.
+
 ## Idea Proposal Task
 
 Generates novel research ideas from literature reviews using a Haiku agent loop, then evaluates them with Sonnet extended thinking.
@@ -295,21 +335,60 @@ The agent receives a single-GPU training script and is asked:
 > - Parameter count: wrap any module with more than 1,000,000 parameters
 > - Do NOT use `transformer_auto_wrap_policy` - implement the logic yourself
 
-### Results
-
-**100% success rate** - Haiku consistently produces correct FSDP implementations.
-
 ### Grading
 
-- **Regex-based checks** for 11 required patterns
-- **Pass threshold**: 9/11 checks
-- Reference solution in `train_fsdp_solution.py`
+Uses **LLM-as-a-judge** (Claude Sonnet) with a 10-point rubric:
+
+| Component | Points | What's Checked |
+|-----------|--------|----------------|
+| Distributed Initialization | 1 | `init_process_group()` + LOCAL_RANK handling |
+| FSDP Model Wrapping | 2 | FSDP import + `lambda_auto_wrap_policy` with custom lambda |
+| Data Distribution | 2 | `DistributedSampler` + `set_epoch()` call |
+| Checkpoint Handling | 2 | Rank 0 only + `FSDP.state_dict_type` with `FullStateDictConfig` |
+| Cleanup | 1 | `destroy_process_group()` |
+| Optimizer Creation | 1 | Created AFTER FSDP wrap |
+| Overall Correctness | 1 | Would run correctly with torchrun |
+
+**Pass threshold**: 8/10 points
+
+### Evaluation Results (3 runs)
+
+| Run | Score | Result | Key Issues |
+|-----|-------|--------|------------|
+| 1 | 9/10 | **PASS** ✓ | Only missing `FullStateDictConfig` |
+| 2 | 5/10 | FAIL | Broken wrap_policy, wrong LOCAL_RANK, missing FullStateDictConfig |
+| 3 | 5/10 | FAIL | Wrong LOCAL_RANK (uses global rank), broken param counting in wrap policy |
+
+**Pass Rate: 33.3% (1/3)**
+
+### Common Failure Modes
+
+1. **LOCAL_RANK handling** - Haiku often uses `dist.get_rank()` instead of `os.environ["LOCAL_RANK"]` to set CUDA device. This works for single-node but breaks multi-node training.
+
+2. **Broken wrap_policy implementations** - The custom lambda function is often incorrectly implemented:
+   - Wrong function signature for `lambda_auto_wrap_policy`
+   - Counts all parameters recursively instead of just the module's own parameters
+
+3. **Missing `FullStateDictConfig`** - Most attempts miss including `FullStateDictConfig(offload_to_cpu=True, rank0_only=True)` in the checkpoint saving context manager.
+
+### Why LLM-as-Judge (not regex)
+
+The LLM evaluator catches subtle bugs that regex would miss:
+- Using global rank vs local rank (both contain "rank" but one is wrong)
+- Incorrect parameter counting in wrap policy (logic error, not syntax)
+- Wrong function signatures that would cause runtime errors
 
 ### Run Tests
 
 ```bash
 cd tasks/fsdp-training
-python test_grading.py
+
+# Run agent evaluation (Haiku converts code, Sonnet grades)
+python evaluation.py -n 3      # 3 runs
+python evaluation.py -n 1 -q   # Single run, quiet
+
+# Unit tests (no API calls)
+SKIP_LLM_TESTS=1 python -m pytest test_grading.py -v
 ```
 
 ## Memory Optimizations Task
@@ -375,7 +454,7 @@ python evaluation.py -n 1      # Single run, verbose
 | Literature Review | Research synthesis | LLM-as-Judge (Sonnet) | 7/10 | ~60-80% |
 | Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL | **0%** (avg score: 5.6/10) |
 | Titans Progressive | Derive architecture concepts | LLM-as-Judge (Sonnet) | 4/5 steps | **0%** (intentionally hard) |
-| FSDP Training | Distributed training | Regex checks | 9/11 | **100%** |
+| FSDP Training | Distributed training | LLM-as-Judge (Sonnet) | 8/10 | **33%** (subtle bugs) |
 | Memory Optimizations | GPU memory reduction | Runtime test + Regex | 6+ optimizations + runs | **10%** (runtime errors) |
 
 ### Sample Results

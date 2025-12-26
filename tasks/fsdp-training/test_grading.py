@@ -2,14 +2,95 @@
 Unit Tests for FSDP Training Task Grading
 
 Run with: python test_grading.py
+
+NOTE: These tests use LLM-as-a-judge which requires API calls.
+For quick unit tests without API calls, use test_grading_unit.py instead.
 """
 
 import unittest
-from task import grading_func
+import os
+import sys
+
+# Ensure we can import from the task module
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from task import grading_func, _strip_markdown_wrapper, _check_code_executes
 
 
-class TestFSDPGrading(unittest.TestCase):
-    """Test the grading function with various code samples."""
+class TestCodeExecution(unittest.TestCase):
+    """Test the code execution validation (no API calls needed)."""
+
+    def test_valid_python_syntax(self):
+        """Valid Python syntax should pass execution check."""
+        valid_code = '''
+import torch
+import torch.distributed as dist
+
+def train():
+    print("hello")
+'''
+        ok, msg = _check_code_executes(valid_code)
+        self.assertTrue(ok, f"Valid code should pass: {msg}")
+
+    def test_invalid_python_syntax(self):
+        """Invalid Python syntax should fail execution check."""
+        invalid_code = """
+def broken(
+    print("missing parenthesis"
+"""
+        ok, msg = _check_code_executes(invalid_code)
+        self.assertFalse(ok, "Invalid syntax should fail")
+
+    def test_strip_markdown_wrapper(self):
+        """Markdown wrapper should be stripped correctly."""
+        code = "print('hello')"
+        wrapped = f"```python\n{code}\n```"
+
+        result = _strip_markdown_wrapper(wrapped)
+        self.assertEqual(result, code)
+
+    def test_strip_markdown_wrapper_no_lang(self):
+        """Markdown wrapper without language should be stripped."""
+        code = "print('hello')"
+        wrapped = f"```\n{code}\n```"
+
+        result = _strip_markdown_wrapper(wrapped)
+        self.assertEqual(result, code)
+
+    def test_no_markdown_wrapper(self):
+        """Code without markdown wrapper should be unchanged."""
+        code = "print('hello')"
+        result = _strip_markdown_wrapper(code)
+        self.assertEqual(result, code)
+
+
+class TestGradingBasicChecks(unittest.TestCase):
+    """Test basic grading checks that don't require LLM calls."""
+
+    def test_empty_submission_fails(self):
+        """Empty submission should fail."""
+        result = grading_func("")
+        self.assertFalse(result)
+
+        result = grading_func(None)
+        self.assertFalse(result)
+
+    def test_short_code_fails(self):
+        """Very short code should fail."""
+        result = grading_func("print('hi')")
+        self.assertFalse(result)
+
+
+@unittest.skipIf(
+    os.environ.get("SKIP_LLM_TESTS", "").lower() in ("1", "true", "yes"),
+    "Skipping LLM-based tests (SKIP_LLM_TESTS is set)"
+)
+class TestFSDPGradingWithLLM(unittest.TestCase):
+    """
+    Test the full grading function with LLM-as-a-judge.
+
+    These tests make API calls and are slower. Skip with SKIP_LLM_TESTS=1.
+    """
 
     def test_reference_solution_passes(self):
         """Reference solution should pass all checks."""
@@ -27,41 +108,6 @@ class TestFSDPGrading(unittest.TestCase):
         result = grading_func(starter)
         self.assertFalse(result, "Starter code should fail")
 
-    def test_empty_submission_fails(self):
-        """Empty submission should fail."""
-        result = grading_func("")
-        self.assertFalse(result)
-
-        result = grading_func(None)
-        self.assertFalse(result)
-
-    def test_invalid_python_fails(self):
-        """Invalid Python syntax should fail."""
-        invalid_code = """
-def broken(
-    print("missing parenthesis"
-"""
-        result = grading_func(invalid_code)
-        self.assertFalse(result, "Invalid syntax should fail")
-
-    def test_partial_implementation_fails(self):
-        """Partial implementation missing key components should fail."""
-        # Has FSDP but missing other requirements
-        partial_code = '''
-import torch
-import torch.distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-
-def train():
-    dist.init_process_group(backend="nccl")
-    model = MyModel()
-    model = FSDP(model)
-    # Missing: DistributedSampler, set_epoch, checkpoint handling, etc.
-    dist.destroy_process_group()
-'''
-        result = grading_func(partial_code)
-        self.assertFalse(result, "Partial implementation should fail")
-
     def test_code_with_markdown_wrapper(self):
         """Code wrapped in markdown blocks should still be parsed."""
         with open("train_fsdp_solution.py") as f:
@@ -71,40 +117,6 @@ def train():
         result = grading_func(markdown_wrapped)
         self.assertTrue(result, "Markdown-wrapped code should pass")
 
-    def test_minimum_viable_fsdp(self):
-        """Test minimum code that should pass (8/10 checks)."""
-        minimal_code = '''
-import os
-import torch
-import torch.distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import StateDictType, FullStateDictConfig
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
-from torch.utils.data.distributed import DistributedSampler
-from functools import partial
-
-def train():
-    dist.init_process_group(backend="nccl")
-    local_rank = int(os.environ["LOCAL_RANK"])
-
-    auto_wrap_policy = partial(transformer_auto_wrap_policy, transformer_layer_cls={TransformerBlock})
-    model = FSDP(MyModel(), auto_wrap_policy=auto_wrap_policy)
-
-    sampler = DistributedSampler(dataset)
-
-    for epoch in range(10):
-        sampler.set_epoch(epoch)
-        # training...
-
-    if dist.get_rank() == 0:
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT):
-            torch.save(model.state_dict(), "checkpoint.pt")
-
-    dist.destroy_process_group()
-'''
-        result = grading_func(minimal_code)
-        self.assertTrue(result, "Minimal viable FSDP should pass")
-
     def test_ddp_instead_of_fsdp_fails(self):
         """Using DDP instead of FSDP should fail."""
         ddp_code = '''
@@ -113,78 +125,69 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader, Dataset
+
+class DummyDataset(Dataset):
+    def __len__(self):
+        return 100
+    def __getitem__(self, idx):
+        return torch.randn(10), torch.randint(0, 10, (1,))
 
 def train():
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
 
-    model = MyModel().cuda()
+    model = torch.nn.Linear(10, 10).cuda()
     model = DDP(model, device_ids=[local_rank])
 
+    optimizer = torch.optim.Adam(model.parameters())
+
+    dataset = DummyDataset()
     sampler = DistributedSampler(dataset)
+    dataloader = DataLoader(dataset, sampler=sampler)
 
     for epoch in range(10):
         sampler.set_epoch(epoch)
+        for batch in dataloader:
+            pass
 
     if dist.get_rank() == 0:
         torch.save(model.module.state_dict(), "checkpoint.pt")
 
     dist.destroy_process_group()
+
+if __name__ == "__main__":
+    train()
 '''
         result = grading_func(ddp_code)
         self.assertFalse(result, "DDP code should fail (not FSDP)")
 
-    def test_missing_set_epoch_fails(self):
-        """Missing set_epoch should contribute to failure."""
-        no_set_epoch = '''
+    def test_partial_implementation_fails(self):
+        """Partial implementation missing key components should fail."""
+        partial_code = '''
 import os
 import torch
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import StateDictType, FullStateDictConfig
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
-from torch.utils.data.distributed import DistributedSampler
-from functools import partial
 
 def train():
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
 
-    auto_wrap_policy = partial(transformer_auto_wrap_policy, transformer_layer_cls={TransformerBlock})
-    model = FSDP(MyModel(), auto_wrap_policy=auto_wrap_policy)
+    model = torch.nn.Linear(10, 10)
+    model = FSDP(model)
 
-    sampler = DistributedSampler(dataset)
-
-    for epoch in range(10):
-        # MISSING: sampler.set_epoch(epoch)
-        pass
-
-    if dist.get_rank() == 0:
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT):
-            torch.save(model.state_dict(), "checkpoint.pt")
+    # Missing: DistributedSampler, set_epoch, checkpoint handling with FSDP state dict, etc.
 
     dist.destroy_process_group()
-'''
-        # This should still pass with 9/10 (threshold is 8)
-        result = grading_func(no_set_epoch)
-        # Missing set_epoch means 9/10, still passes
-        self.assertTrue(result, "Missing one check should still pass (9/10 >= 8)")
 
-    def test_missing_multiple_components_fails(self):
-        """Missing multiple components should fail."""
-        incomplete = '''
-import torch
-import torch.distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-
-def train():
-    dist.init_process_group(backend="nccl")
-    model = FSDP(MyModel())
-    # Missing: LOCAL_RANK, DistributedSampler, set_epoch, wrap_policy, checkpoint handling
-    dist.destroy_process_group()
+if __name__ == "__main__":
+    train()
 '''
-        result = grading_func(incomplete)
-        self.assertFalse(result, "Missing multiple components should fail")
+        result = grading_func(partial_code)
+        self.assertFalse(result, "Partial implementation should fail")
 
 
 class TestModelDefinition(unittest.TestCase):
