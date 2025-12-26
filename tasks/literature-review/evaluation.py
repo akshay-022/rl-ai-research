@@ -29,8 +29,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import tools directly (avoid relative import issues)
 from tools import (
-    TOOLS as RESEARCH_TOOLS,
-    HANDLERS as RESEARCH_HANDLERS,
+    WEB_SEARCH_TOOL,
+    GET_PAPER_INTRO_TOOL,
+    GET_PAPER_METHOD_TOOL,
+    GET_PAPER_RESULTS_TOOL,
+    web_search,
+    get_paper_introduction,
+    get_paper_methodology,
+    get_paper_results,
 )
 
 # ============================================================
@@ -41,19 +47,19 @@ TOPIC = "giving LLMs long term memory"
 
 PROMPT = f"""You are a research assistant conducting a literature review on: "{TOPIC}"
 
-Your goal is to create a comprehensive literature review by:
+You have 4 research tools available:
+1. web_search - Search for papers by topic
+2. get_paper_introduction - Extract the INTRODUCTION section (literature context, related work)
+3. get_paper_methodology - Extract the METHODS section (how the approach works)
+4. get_paper_results - Extract the RESULTS section (quantitative findings, benchmarks)
 
-1. Search for relevant papers using web_search with different queries covering all major approaches
-2. For survey papers or highly-cited papers, use get_paper_introduction to extract the INTRODUCTION section
-   - The introduction contains the authors' own literature review with context about related work
-   - This is MUCH more valuable than abstracts - it shows how papers relate to each other
-3. Use get_paper_with_tldr for quick summaries of individual papers
-4. Use get_paper_references on 1-2 key papers to find foundational/seminal works
-5. Synthesize everything into a structured literature review
-
-IMPORTANT: For at least 2-3 key papers (especially survey papers), you MUST call get_paper_introduction
-to extract the introduction section. The introduction contains the prior literature context that will
-help you understand how different approaches relate to each other.
+Your workflow:
+1. Use web_search to find relevant papers for each major approach
+2. For important papers, extract the relevant sections:
+   - get_paper_introduction for literature context and related work
+   - get_paper_results for quantitative findings and performance numbers
+   - get_paper_methodology if you need to understand how something works
+3. Synthesize everything into a structured literature review
 
 Your final review MUST cover ALL of these major approaches:
 - Extended context windows (long-context models like Gemini 1M, efficient attention like Longformer, RMT)
@@ -68,7 +74,7 @@ For EACH approach, include:
 - Reported results/performance improvements (MUST include specific quantitative results)
 - Limitations or trade-offs
 
-Use the available tools to gather information, then submit your complete literature review using submit_answer.
+Use submit_answer to submit your complete literature review.
 Be thorough and cite specific papers with their key findings and quantitative results."""
 
 
@@ -89,9 +95,12 @@ SUBMIT_TOOL = {
 }
 
 # Combined tools and handlers
-TOOLS = RESEARCH_TOOLS + [SUBMIT_TOOL]
+TOOLS = [WEB_SEARCH_TOOL, GET_PAPER_INTRO_TOOL, GET_PAPER_METHOD_TOOL, GET_PAPER_RESULTS_TOOL, SUBMIT_TOOL]
 TOOL_HANDLERS: dict[str, Callable[..., Any]] = {
-    **RESEARCH_HANDLERS,
+    "web_search": lambda query, max_results=5: web_search(query, max_results),
+    "get_paper_introduction": lambda paper_id: get_paper_introduction(paper_id),
+    "get_paper_methodology": lambda paper_id: get_paper_methodology(paper_id),
+    "get_paper_results": lambda paper_id: get_paper_results(paper_id),
     "submit_answer": submit_answer_tool,
 }
 
@@ -116,84 +125,99 @@ REFERENCE_MATERIAL = _load_reference_material()
 
 GRADING_RUBRIC = """You are evaluating a literature review on "giving LLMs long term memory".
 
-## Reference Material (Ground Truth)
-Below is a comprehensive reference covering the key topics and seminal works in this area:
+## REQUIRED COVERAGE - Check each item carefully
 
-{reference_material}
+The review MUST cover these 5 major approaches AND mention specific seminal works within each.
 
-## Grading Criteria - BE STRICT
+### APPROACH 1: Extended Context Windows (2 points total)
+Required topics (1 point if ANY mentioned):
+- Long-context proprietary models: Claude 100k, GPT-4 128k/32k, Gemini 1.5 (1M tokens)
+- Efficient attention: Longformer, BigBird, sparse attention
+- Recurrent/segment processing: RMT (Recurrent Memory Transformer)
+- Context limitations: "context rot", attention dilution, "lost in the middle"
 
-The review must demonstrate comprehensive coverage. Evaluate against these criteria:
+Required results (1 point if ANY mentioned):
+- Gemini 1.5: 99% needle-in-haystack at 1M tokens
+- RMT: processed up to 2M tokens
+- Any specific benchmark number for long context
 
-### SECTION 1: Coverage of ALL Major Approaches (5 points - MUST GET ALL 5)
+### APPROACH 2: Retrieval-Augmented Generation (2 points total)
+Required topics (1 point if ANY mentioned):
+- RAG architecture: external knowledge stores, vector databases, embedding retrieval
+- Key systems: RETRO, RAG (Lewis et al), Atlas
 
-Each approach MUST be discussed with explanation AND at least one specific result/finding:
+Required results (1 point if ANY mentioned):
+- RETRO: 7.5B model outperformed 175B Jurassic-1
+- Any quantitative improvement from retrieval augmentation
 
-1. **Extended Context Windows** (1 point)
-   - MUST mention: Long-context models (Claude 100k, GPT-4 128k, Gemini 1M), OR efficient attention (Longformer, BigBird, RMT)
-   - MUST include a result: e.g., "Gemini 1.5 achieved 99% on needle-in-haystack at 1M tokens" or "RMT processed 2M tokens" or similar quantitative finding
-   - FAIL if: Only mentions "longer context" without specifics or results
+### APPROACH 3: Summarization & Context Compression (2 points total)
+Required topics (1 point if ANY mentioned):
+- Recursive/iterative summarization
+- Conversation summary memory (e.g., LangChain ConversationSummaryMemory)
+- Context distillation, context scaffolding
 
-2. **Retrieval-Augmented Generation (RAG)** (1 point)
-   - MUST mention: External knowledge stores, vector databases, retrieval systems
-   - MUST mention at least ONE of: RETRO, RAG, Atlas, or similar retrieval-augmented systems
-   - MUST include a result: e.g., "RETRO 7.5B outperformed 175B Jurassic-1" or retrieval improving accuracy
-   - FAIL if: Just says "retrieval helps" without specific systems or results
+Required results (1 point if ANY mentioned):
+- Improved long-dialogue consistency
+- Any specific improvement metric (e.g., +3% BLEU, human preference)
 
-3. **Summarization/Compression** (1 point)
-   - MUST mention: Context compression, recursive summarization, conversation summaries, memory management
-   - MUST include a finding: e.g., "recursive summarization improved long-dialogue consistency" or quantitative improvement
-   - FAIL if: Only mentions "summarizing" without mechanism or results
+### APPROACH 4: Specialized Memory Architectures (2 points total)
+Required topics (1 point if ANY mentioned):
+- MemGPT: LLM as OS managing memory, paging context in/out
+- LongMem: decoupled memory bank with side network
+- Generative Agents: structured memory with reflection
+- Key-value memory networks, hierarchical memory, memory graphs
 
-4. **Specialized Memory Architectures** (1 point)
-   - MUST mention at least ONE of: MemGPT, LongMem, key-value memory, hierarchical memory, memory graphs, Generative Agents
-   - MUST explain the mechanism (e.g., "MemGPT treats LLM as OS managing memory")
-   - MUST include a result: e.g., "LongMem achieved 40.5% on ChapterBreak" or similar
-   - FAIL if: Only says "memory modules" without specific systems or results
+Required results (1 point if ANY mentioned):
+- LongMem: 40.5% on ChapterBreak, beat GPT-3 with 313x fewer params
+- MemGPT: outperformed vanilla LLMs on long documents
+- Generative Agents: believable multi-day agent behavior
 
-5. **Parametric Memory / Weight Updates** (1 point)
-   - MUST mention: Continual learning, fine-tuning for new knowledge, model editing (ROME, MEMIT), or fast weights
-   - MUST discuss challenge: catastrophic forgetting
-   - MUST include a finding: e.g., "MEMIT edited 5000 facts with minimal side effects"
-   - FAIL if: Only mentions "training on new data" without specifics
+### APPROACH 5: Parametric Memory / Weight Updates (2 points total)
+Required topics (1 point if ANY mentioned):
+- Continual learning, catastrophic forgetting
+- Model editing: ROME, MEND, MEMIT
+- Fine-tuning for knowledge updates, fast weights
 
-### SECTION 2: Seminal Works with Results (3 points)
+Required results (1 point if ANY mentioned):
+- MEMIT: edited 5000+ facts with minimal side effects
+- Any quantitative result on knowledge editing or continual learning
 
-Award 1 point each ONLY if the paper is mentioned WITH a specific result:
+## SCORING
 
-1. **Retrieval Paper with Result** (1 point): RETRO, RAG, or Atlas mentioned with quantitative improvement
-2. **Memory Architecture Paper with Result** (1 point): MemGPT, LongMem, or Generative Agents with specific finding
-3. **Long Context Paper with Result** (1 point): Gemini, RMT, or efficient attention paper with benchmark result
+Count total points out of 10 (2 per approach: 1 for topics, 1 for results).
 
-### SECTION 3: Quality of Synthesis (2 points)
-
-1. **Comparison/Trade-offs** (1 point): Explicitly compares approaches (e.g., retrieval vs parametric, context length vs efficiency, accuracy vs compute)
-2. **Current Trends or Gaps** (1 point): Discusses recent trends (hybrid systems, ChatGPT memory) OR identifies research gaps
+For each approach, check:
+- Topics covered? (1 point if yes)
+- Specific results/numbers mentioned? (1 point if yes)
 
 ## Response Format
 
 ```
-SECTION 1 - Major Approaches:
-1. Extended Context: PASS/FAIL - [did they explain + give result?]
-2. RAG/Retrieval: PASS/FAIL - [specific system + result?]
-3. Summarization: PASS/FAIL - [mechanism + finding?]
-4. Memory Architectures: PASS/FAIL - [specific system + result?]
-5. Parametric Memory: PASS/FAIL - [discussed forgetting + result?]
+APPROACH 1 - Extended Context:
+- Topics: PASS/FAIL [list what was mentioned]
+- Results: PASS/FAIL [list specific numbers mentioned]
 
-SECTION 2 - Seminal Works with Results:
-6. Retrieval Paper: PASS/FAIL - [paper name + quantitative result?]
-7. Memory Paper: PASS/FAIL - [paper name + quantitative result?]
-8. Long Context Paper: PASS/FAIL - [paper name + quantitative result?]
+APPROACH 2 - RAG/Retrieval:
+- Topics: PASS/FAIL [list what was mentioned]
+- Results: PASS/FAIL [list specific numbers mentioned]
 
-SECTION 3 - Synthesis:
-9. Comparisons: PASS/FAIL - [explicit trade-off discussion?]
-10. Trends/Gaps: PASS/FAIL - [current directions or gaps?]
+APPROACH 3 - Summarization:
+- Topics: PASS/FAIL [list what was mentioned]
+- Results: PASS/FAIL [list specific numbers mentioned]
+
+APPROACH 4 - Memory Architectures:
+- Topics: PASS/FAIL [list what was mentioned]
+- Results: PASS/FAIL [list specific numbers mentioned]
+
+APPROACH 5 - Parametric Memory:
+- Topics: PASS/FAIL [list what was mentioned]
+- Results: PASS/FAIL [list specific numbers mentioned]
 
 TOTAL: X/10
 RESULT: PASS (if >= 7/10) / FAIL (if < 7/10)
 ```
 
-A submission PASSES only if it scores 7/10 or higher. Be STRICT - require specific papers and quantitative results."""
+Be STRICT. Only give points for specific mentions, not vague references."""
 
 
 def grading_func(result: Any) -> bool:
@@ -327,15 +351,15 @@ def _log_tool_call(tool_name: str, tool_input: dict):
     if tool_name == "web_search":
         print(f"  Query: \"{tool_input.get('query', '')}\"")
         print(f"  Max results: {tool_input.get('max_results', 5)}")
-    elif tool_name == "get_paper_with_tldr":
-        print(f"  Paper ID: {tool_input.get('paper_id', '')}")
-    elif tool_name == "get_paper_references":
-        print(f"  Paper ID: {tool_input.get('paper_id', '')}")
-        print(f"  Limit: {tool_input.get('limit', 10)}")
-        print(f"  (Will return abstracts and TLDRs for context)")
     elif tool_name == "get_paper_introduction":
         print(f"  Paper ID: {tool_input.get('paper_id', '')}")
-        print(f"  (Extracting INTRODUCTION section from PDF - contains literature review)")
+        print(f"  (Extracting INTRODUCTION section - literature context)")
+    elif tool_name == "get_paper_methodology":
+        print(f"  Paper ID: {tool_input.get('paper_id', '')}")
+        print(f"  (Extracting METHODOLOGY section - how approach works)")
+    elif tool_name == "get_paper_results":
+        print(f"  Paper ID: {tool_input.get('paper_id', '')}")
+        print(f"  (Extracting RESULTS section - quantitative findings)")
     elif tool_name == "submit_answer":
         print(f"  (Submitting final literature review)")
     else:
@@ -359,73 +383,59 @@ def _log_tool_result(tool_name: str, result: dict):
             print(_format_paper_result(paper, i))
             print()
 
-    elif tool_name == "get_paper_with_tldr":
-        title = result.get("title", "Unknown")
-        year = result.get("year", "?")
-        citations = result.get("citation_count", "?")
-        tldr = result.get("tldr")
-        abstract = result.get("abstract")
-        authors = result.get("authors", [])
-
-        print(f"  ✓ Paper Details:")
-        print(f"      Title: {title}")
-        print(f"      Year: {year} | Citations: {citations}")
-        if authors:
-            print(f"      Authors: {', '.join(authors[:3])}{'...' if len(authors) > 3 else ''}")
-        if tldr:
-            print(f"\n      📝 TLDR:")
-            print(_wrap_text(tldr, indent="         "))
-        if abstract:
-            short_abstract = abstract[:400] + "..." if len(abstract) > 400 else abstract
-            print(f"\n      📄 Abstract (truncated):")
-            print(_wrap_text(short_abstract, indent="         "))
-
-    elif tool_name == "get_paper_references":
-        refs = result.get("references", [])
-        print(f"  ✓ Found {len(refs)} references WITH context:")
-        print()
-        for i, ref in enumerate(refs[:8], 1):  # Show up to 8 references
-            title = ref.get("title", "Unknown")
-            year = ref.get("year", "?")
-            citations = ref.get("citation_count", "?")
-            tldr = ref.get("tldr")
-            abstract = ref.get("abstract")
-
-            print(f"    [{i}] {title}")
-            print(f"        Year: {year} | Citations: {citations}")
-
-            # Show TLDR or abstract snippet for context
-            if tldr:
-                print(f"        📝 TLDR: {tldr[:150]}..." if len(tldr) > 150 else f"        📝 TLDR: {tldr}")
-            elif abstract:
-                short_abs = abstract[:150] + "..." if len(abstract) > 150 else abstract
-                print(f"        📄 Abstract: {short_abs}")
-            print()
-        if len(refs) > 8:
-            print(f"    ... and {len(refs) - 8} more references")
-
     elif tool_name == "get_paper_introduction":
         title = result.get("title", "Unknown")
         arxiv_id = result.get("arxiv_id", "")
         introduction = result.get("introduction")
-        abstract = result.get("abstract")
 
         print(f"  ✓ Paper Introduction Extracted:")
         print(f"      Title: {title}")
         if arxiv_id:
             print(f"      arXiv ID: {arxiv_id}")
         if introduction:
-            print(f"\n      📖 INTRODUCTION (literature review context):")
+            print(f"\n      📖 INTRODUCTION:")
             print(f"      {'─' * 60}")
-            # Show more of the introduction since it's valuable
             if len(introduction) > 2000:
                 print(_wrap_text(introduction[:2000], indent="         "))
                 print(f"\n         ... ({len(introduction) - 2000} more chars)")
             else:
                 print(_wrap_text(introduction, indent="         "))
-        elif abstract:
-            print(f"\n      ⚠️  Could not extract introduction, showing abstract:")
-            print(_wrap_text(abstract, indent="         "))
+        else:
+            print(f"\n      ⚠️  Could not extract introduction")
+
+    elif tool_name == "get_paper_methodology":
+        title = result.get("title", "Unknown")
+        methodology = result.get("methodology")
+
+        print(f"  ✓ Paper Methodology Extracted:")
+        print(f"      Title: {title}")
+        if methodology:
+            print(f"\n      🔧 METHODOLOGY:")
+            print(f"      {'─' * 60}")
+            if len(methodology) > 2000:
+                print(_wrap_text(methodology[:2000], indent="         "))
+                print(f"\n         ... ({len(methodology) - 2000} more chars)")
+            else:
+                print(_wrap_text(methodology, indent="         "))
+        else:
+            print(f"\n      ⚠️  Could not extract methodology")
+
+    elif tool_name == "get_paper_results":
+        title = result.get("title", "Unknown")
+        results_text = result.get("results")
+
+        print(f"  ✓ Paper Results Extracted:")
+        print(f"      Title: {title}")
+        if results_text:
+            print(f"\n      📊 RESULTS:")
+            print(f"      {'─' * 60}")
+            if len(results_text) > 2000:
+                print(_wrap_text(results_text[:2000], indent="         "))
+                print(f"\n         ... ({len(results_text) - 2000} more chars)")
+            else:
+                print(_wrap_text(results_text, indent="         "))
+        else:
+            print(f"\n      ⚠️  Could not extract results")
 
     else:
         # Generic result display
@@ -436,7 +446,7 @@ def _log_tool_result(tool_name: str, result: dict):
 # AGENT LOOP
 # ============================================================
 
-MAX_TOKENS = 8000  # Increased for longer responses
+MAX_TOKENS = 16000  # Larger output for comprehensive literature reviews
 
 
 async def run_agent_loop(
@@ -503,8 +513,14 @@ async def run_agent_loop(
                     handler = tool_handlers[tool_name]
 
                     if tool_name == "submit_answer":
-                        assert isinstance(tool_input, dict) and "answer" in tool_input
-                        result = handler(tool_input["answer"])
+                        # Handle malformed input (e.g., if model hit max_tokens)
+                        if isinstance(tool_input, dict) and "answer" in tool_input:
+                            answer = tool_input["answer"]
+                        else:
+                            answer = str(tool_input) if tool_input else ""
+                            if verbose:
+                                print(f"  ⚠️  Malformed submit input, using raw: {len(answer)} chars")
+                        result = handler(answer)
                         submitted_answer = result["answer"]
                         if verbose:
                             print(f"  ✓ Answer submitted ({len(submitted_answer)} chars)")

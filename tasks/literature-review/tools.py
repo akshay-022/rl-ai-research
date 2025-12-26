@@ -294,68 +294,67 @@ def get_paper_references(paper_id, limit=10):
         return {"error": str(e), "references": []}
 
 
-def _extract_introduction_from_pdf(pdf_url):
-    """
-    Download PDF and extract the introduction section.
-    The introduction contains the literature review context we need.
-    """
+def _download_pdf(pdf_url):
+    """Download PDF and return raw bytes."""
+    _rate_limit()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(pdf_url, headers={"User-Agent": "Python/research-agent"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read(), None
+        except urllib.error.HTTPError as e:
+            if e.code == 429:  # Only retry rate limits
+                wait_time = (attempt + 1) * 2
+                print(f"  ⏳ PDF rate limited, waiting {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            return None, f"HTTP {e.code}: {e.reason}"
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+            return None, str(e)
+    return None, "Failed to download PDF after retries"
+
+
+def _extract_pdf_text(pdf_data, start_page=0, end_page=None):
+    """Extract text from PDF pages."""
     import io
-    import re
 
     try:
-        # Try to import PyPDF2 or pdfplumber
+        import PyPDF2
+        use_pypdf = True
+    except ImportError:
         try:
-            import PyPDF2
-            use_pypdf = True
+            import pdfplumber
+            use_pypdf = False
         except ImportError:
-            try:
-                import pdfplumber
-                use_pypdf = False
-            except ImportError:
-                return None, "PDF parsing libraries not available (install PyPDF2 or pdfplumber)"
+            return None, "PDF parsing libraries not available (install PyPDF2 or pdfplumber)"
 
-        # Download PDF with retry logic (only retry 429s)
-        _rate_limit()
-        max_retries = 3
-        pdf_data = None
-        for attempt in range(max_retries):
-            try:
-                req = urllib.request.Request(pdf_url, headers={"User-Agent": "Python/research-agent"})
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    pdf_data = resp.read()
-                break
-            except urllib.error.HTTPError as e:
-                if e.code == 429:  # Only retry rate limits
-                    wait_time = (attempt + 1) * 2
-                    print(f"  ⏳ PDF rate limited, waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                    continue
-                raise
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(1)
-                    continue
-                raise
-
-        if pdf_data is None:
-            return None, "Failed to download PDF after retries"
-
-        # Extract text from first few pages (intro is usually in first 3-4 pages)
+    try:
         if use_pypdf:
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_data))
+            num_pages = len(pdf_reader.pages)
+            if end_page is None:
+                end_page = num_pages
+            end_page = min(end_page, num_pages)
+
             text = ""
-            for i in range(min(5, len(pdf_reader.pages))):
+            for i in range(start_page, end_page):
                 text += pdf_reader.pages[i].extract_text() + "\n"
         else:
             with pdfplumber.open(io.BytesIO(pdf_data)) as pdf:
+                num_pages = len(pdf.pages)
+                if end_page is None:
+                    end_page = num_pages
+                end_page = min(end_page, num_pages)
+
                 text = ""
-                for i in range(min(5, len(pdf.pages))):
+                for i in range(start_page, end_page):
                     text += pdf.pages[i].extract_text() + "\n"
 
-        # Try to extract just the introduction section
-        intro_text = _find_introduction_section(text)
-        return intro_text, None
-
+        return text, None
     except Exception as e:
         return None, str(e)
 
@@ -411,21 +410,119 @@ def _find_introduction_section(text):
     return intro_text
 
 
-def get_paper_introduction(paper_id):
+def _find_methodology_section(text):
     """
-    Get the INTRODUCTION section of a paper - this is where authors discuss
-    related work, compare approaches, and provide literature context.
-    Much more valuable than abstracts for understanding the research landscape.
+    Extract the methodology/methods section from paper text.
+    This explains how the approach works.
     """
-    if not paper_id or not str(paper_id).strip():
-        return {"error": "Empty paper ID"}
+    import re
 
+    # Common section header patterns for methodology
+    method_patterns = [
+        r'(?:^|\n)\s*\d+\.?\s*(?:Method(?:s|ology)?|Approach|Model|Architecture|Framework)\s*\n',
+        r'(?:^|\n)\s*(?:II|III|IV)\.?\s*(?:Method(?:s|ology)?|Approach|Model|Architecture)\s*\n',
+        r'(?:^|\n)\s*(?:METHOD(?:S|OLOGY)?|APPROACH|MODEL|ARCHITECTURE)\s*\n',
+        r'(?:^|\n)\s*\d+\.?\s*(?:Proposed|Our)\s+(?:Method|Approach|Model)\s*\n',
+    ]
+
+    # Patterns that mark end of methodology
+    end_patterns = [
+        r'(?:^|\n)\s*\d+\.?\s*(?:Experiment|Result|Evaluation|Implementation)',
+        r'(?:^|\n)\s*(?:IV|V|VI)\.?\s*(?:Experiment|Result|Evaluation)',
+        r'(?:^|\n)\s*(?:EXPERIMENT|RESULT|EVALUATION)',
+    ]
+
+    # Find methodology start
+    method_start = None
+    for pattern in method_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            method_start = match.end()
+            break
+
+    if method_start is None:
+        return None
+
+    # Find methodology end
+    method_end = len(text)
+    remaining_text = text[method_start:]
+    for pattern in end_patterns:
+        match = re.search(pattern, remaining_text, re.IGNORECASE)
+        if match:
+            method_end = method_start + match.start()
+            break
+
+    method_text = text[method_start:method_end].strip()
+
+    # Limit length
+    if len(method_text) > 6000:
+        method_text = method_text[:6000] + "\n[... truncated]"
+
+    return method_text
+
+
+def _find_results_section(text):
+    """
+    Extract the results/experiments section from paper text.
+    This contains quantitative findings and performance numbers.
+    """
+    import re
+
+    # Common section header patterns for results
+    results_patterns = [
+        r'(?:^|\n)\s*\d+\.?\s*(?:Experiment(?:s|al)?|Result(?:s)?|Evaluation|Empirical)\s*\n',
+        r'(?:^|\n)\s*(?:IV|V|VI)\.?\s*(?:Experiment|Result|Evaluation)\s*\n',
+        r'(?:^|\n)\s*(?:EXPERIMENT|RESULT|EVALUATION)\s*\n',
+        r'(?:^|\n)\s*\d+\.?\s*(?:Experiment(?:s|al)?\s+(?:Result|Setup|Evaluation))\s*\n',
+    ]
+
+    # Patterns that mark end of results
+    end_patterns = [
+        r'(?:^|\n)\s*\d+\.?\s*(?:Conclusion|Discussion|Limitation|Related\s*Work|Future)',
+        r'(?:^|\n)\s*(?:V|VI|VII)\.?\s*(?:Conclusion|Discussion|Limitation)',
+        r'(?:^|\n)\s*(?:CONCLUSION|DISCUSSION|LIMITATION)',
+        r'(?:^|\n)\s*(?:Acknowledg|Reference)',
+    ]
+
+    # Find results start
+    results_start = None
+    for pattern in results_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            results_start = match.end()
+            break
+
+    if results_start is None:
+        return None
+
+    # Find results end
+    results_end = len(text)
+    remaining_text = text[results_start:]
+    for pattern in end_patterns:
+        match = re.search(pattern, remaining_text, re.IGNORECASE)
+        if match:
+            results_end = results_start + match.start()
+            break
+
+    results_text = text[results_start:results_end].strip()
+
+    # Limit length
+    if len(results_text) > 6000:
+        results_text = results_text[:6000] + "\n[... truncated]"
+
+    return results_text
+
+
+def _get_paper_metadata(paper_id):
+    """Get paper metadata and PDF URL from Semantic Scholar."""
     paper_id = str(paper_id).strip()
 
-    # First, get paper metadata from Semantic Scholar to find PDF URL
     arxiv_id = None
     pdf_url = None
+    title = ""
+    abstract = ""
 
+    # Check if it's an arXiv ID
     if paper_id.lower().startswith("arxiv:"):
         arxiv_id = paper_id[6:]
     elif paper_id.replace(".", "").replace("v", "").isdigit():
@@ -433,9 +530,7 @@ def get_paper_introduction(paper_id):
     elif len(paper_id.split(".")) == 2 and paper_id.split(".")[0].isdigit():
         arxiv_id = paper_id
 
-    # Try Semantic Scholar for PDF URL
-    title = ""
-    abstract = ""
+    # Try Semantic Scholar for metadata
     try:
         headers = {
             "User-Agent": "Python",
@@ -462,37 +557,158 @@ def get_paper_introduction(paper_id):
     if arxiv_id and not pdf_url:
         pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
-    if not pdf_url:
-        return {
-            "paper_id": paper_id,
-            "title": title,
-            "abstract": abstract,
-            "introduction": None,
-            "error": "No PDF available for this paper",
-        }
-
-    # Extract introduction from PDF
-    intro_text, error = _extract_introduction_from_pdf(pdf_url)
-
-    if error:
-        # Fall back to just abstract
-        return {
-            "paper_id": paper_id,
-            "arxiv_id": arxiv_id,
-            "title": title,
-            "abstract": abstract,
-            "introduction": None,
-            "pdf_url": pdf_url,
-            "error": f"Could not extract introduction: {error}. Use abstract instead.",
-        }
-
     return {
         "paper_id": paper_id,
         "arxiv_id": arxiv_id,
         "title": title,
         "abstract": abstract,
-        "introduction": intro_text,
         "pdf_url": pdf_url,
+    }
+
+
+def get_paper_introduction(paper_id):
+    """
+    Get the INTRODUCTION section of a paper - this is where authors discuss
+    related work, compare approaches, and provide literature context.
+    Much more valuable than abstracts for understanding the research landscape.
+    """
+    if not paper_id or not str(paper_id).strip():
+        return {"error": "Empty paper ID"}
+
+    metadata = _get_paper_metadata(paper_id)
+
+    if not metadata["pdf_url"]:
+        return {
+            **metadata,
+            "introduction": None,
+            "error": "No PDF available for this paper",
+        }
+
+    # Download PDF
+    pdf_data, error = _download_pdf(metadata["pdf_url"])
+    if error:
+        return {
+            **metadata,
+            "introduction": None,
+            "error": f"Could not download PDF: {error}",
+        }
+
+    # Extract text from first pages (intro is usually in first 5 pages)
+    text, error = _extract_pdf_text(pdf_data, start_page=0, end_page=5)
+    if error:
+        return {
+            **metadata,
+            "introduction": None,
+            "error": f"Could not extract text: {error}",
+        }
+
+    intro_text = _find_introduction_section(text)
+
+    return {
+        **metadata,
+        "introduction": intro_text,
+        "error": None,
+    }
+
+
+def get_paper_methodology(paper_id):
+    """
+    Get the METHODOLOGY/METHODS section of a paper - this explains how the
+    approach works, the architecture, and technical details.
+    """
+    if not paper_id or not str(paper_id).strip():
+        return {"error": "Empty paper ID"}
+
+    metadata = _get_paper_metadata(paper_id)
+
+    if not metadata["pdf_url"]:
+        return {
+            **metadata,
+            "methodology": None,
+            "error": "No PDF available for this paper",
+        }
+
+    # Download PDF
+    pdf_data, error = _download_pdf(metadata["pdf_url"])
+    if error:
+        return {
+            **metadata,
+            "methodology": None,
+            "error": f"Could not download PDF: {error}",
+        }
+
+    # Extract text from pages 2-10 (methods usually after intro)
+    text, error = _extract_pdf_text(pdf_data, start_page=1, end_page=10)
+    if error:
+        return {
+            **metadata,
+            "methodology": None,
+            "error": f"Could not extract text: {error}",
+        }
+
+    method_text = _find_methodology_section(text)
+
+    if not method_text:
+        return {
+            **metadata,
+            "methodology": None,
+            "error": "Could not find methodology section in paper",
+        }
+
+    return {
+        **metadata,
+        "methodology": method_text,
+        "error": None,
+    }
+
+
+def get_paper_results(paper_id):
+    """
+    Get the RESULTS/EXPERIMENTS section of a paper - this contains quantitative
+    findings, performance numbers, benchmarks, and comparisons.
+    """
+    if not paper_id or not str(paper_id).strip():
+        return {"error": "Empty paper ID"}
+
+    metadata = _get_paper_metadata(paper_id)
+
+    if not metadata["pdf_url"]:
+        return {
+            **metadata,
+            "results": None,
+            "error": "No PDF available for this paper",
+        }
+
+    # Download PDF
+    pdf_data, error = _download_pdf(metadata["pdf_url"])
+    if error:
+        return {
+            **metadata,
+            "results": None,
+            "error": f"Could not download PDF: {error}",
+        }
+
+    # Extract text from pages 5-15 (results usually in middle/end)
+    text, error = _extract_pdf_text(pdf_data, start_page=4, end_page=15)
+    if error:
+        return {
+            **metadata,
+            "results": None,
+            "error": f"Could not extract text: {error}",
+        }
+
+    results_text = _find_results_section(text)
+
+    if not results_text:
+        return {
+            **metadata,
+            "results": None,
+            "error": "Could not find results section in paper",
+        }
+
+    return {
+        **metadata,
+        "results": results_text,
         "error": None,
     }
 
@@ -548,7 +764,7 @@ GET_PAPER_REFS_TOOL = {
 
 GET_PAPER_INTRO_TOOL = {
     "name": "get_paper_introduction",
-    "description": "Extract the INTRODUCTION section from a paper's PDF. The introduction is where authors discuss related work, compare approaches, and provide comprehensive literature context. This is MUCH more valuable than abstracts for understanding the research landscape. Use this on survey papers or seminal works to get their literature review.",
+    "description": "Extract the INTRODUCTION section from a paper's PDF. The introduction is where authors discuss related work, compare approaches, and provide comprehensive literature context. Use this to understand how papers relate to each other.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -561,11 +777,43 @@ GET_PAPER_INTRO_TOOL = {
     },
 }
 
-TOOLS = [WEB_SEARCH_TOOL, GET_PAPER_TLDR_TOOL, GET_PAPER_REFS_TOOL, GET_PAPER_INTRO_TOOL]
+GET_PAPER_METHOD_TOOL = {
+    "name": "get_paper_methodology",
+    "description": "Extract the METHODOLOGY/METHODS section from a paper's PDF. This explains how the approach works, the architecture, algorithms, and technical details.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "paper_id": {
+                "type": "string",
+                "description": "Paper ID - can be arXiv ID (e.g. '2104.09864'), Semantic Scholar ID, or DOI"
+            }
+        },
+        "required": ["paper_id"],
+    },
+}
+
+GET_PAPER_RESULTS_TOOL = {
+    "name": "get_paper_results",
+    "description": "Extract the RESULTS/EXPERIMENTS section from a paper's PDF. This contains quantitative findings, performance numbers, benchmarks, and comparisons with other methods.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "paper_id": {
+                "type": "string",
+                "description": "Paper ID - can be arXiv ID (e.g. '2104.09864'), Semantic Scholar ID, or DOI"
+            }
+        },
+        "required": ["paper_id"],
+    },
+}
+
+TOOLS = [WEB_SEARCH_TOOL, GET_PAPER_TLDR_TOOL, GET_PAPER_REFS_TOOL, GET_PAPER_INTRO_TOOL, GET_PAPER_METHOD_TOOL, GET_PAPER_RESULTS_TOOL]
 
 HANDLERS = {
     "web_search": lambda query, max_results=5: web_search(query, max_results),
     "get_paper_with_tldr": lambda paper_id: get_paper_with_tldr(paper_id),
     "get_paper_references": lambda paper_id, limit=10: get_paper_references(paper_id, limit),
     "get_paper_introduction": lambda paper_id: get_paper_introduction(paper_id),
+    "get_paper_methodology": lambda paper_id: get_paper_methodology(paper_id),
+    "get_paper_results": lambda paper_id: get_paper_results(paper_id),
 }
