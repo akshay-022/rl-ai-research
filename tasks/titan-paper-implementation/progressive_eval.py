@@ -22,13 +22,17 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 STEP_1_PROMPT = """I want to add a memory system to a Transformer that can handle very long sequences without the quadratic attention cost.
 
-What kind of memory structure would you propose? Describe its mathematical form."""
+What kind of memory structure would you propose? Describe its mathematical form.
+
+Also provide pseudocode showing how this memory would be initialized and updated."""
 
 STEP_2_PROMPT = """Consider a neural memory system where we store information in a weight matrix M that gets updated for every token.
 
 If you update this memory for every token, won't it get overwhelmed with noise?
 
-What's the problem here and how would you address it?"""
+What's the problem here and how would you address it?
+
+Provide pseudocode showing your proposed filtering mechanism."""
 
 STEP_3_PROMPT = """Consider a neural memory system for Transformers where:
 - Memory is stored as a matrix M
@@ -36,7 +40,9 @@ STEP_3_PROMPT = """Consider a neural memory system for Transformers where:
 
 Give me the complete mathematical update rule for this memory.
 
-Write it as a single equation: M_new = ..."""
+Write it as a single equation: M_new = ...
+
+Also provide pseudocode showing how this update rule would be applied step by step."""
 
 STEP_4_PROMPT = """Consider a Transformer block that has BOTH:
 1. Standard attention (for short-term context)
@@ -44,7 +50,9 @@ STEP_4_PROMPT = """Consider a Transformer block that has BOTH:
 
 How should you combine their outputs? Just adding them (attn + mem) seems too simple.
 
-What's a better approach and why?"""
+What's a better approach and why?
+
+Provide pseudocode showing how the fusion would work."""
 
 STEP_5_PROMPT = """Implement a neural memory module in PyTorch.
 

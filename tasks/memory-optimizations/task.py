@@ -61,14 +61,13 @@ Some common techniques include: mixed precision training, gradient checkpointing
 
 ## Important Notes
 
-- For mixed precision: `from torch.cuda.amp import autocast, GradScaler` then `with autocast():` - do NOT pass device_type to autocast
 - Do NOT modify the model architecture in model.py - only optimize the training script
 - Keep all the original command line arguments working
 
 ## Requirements
 
 - Your code must be valid, runnable Python
-- Apply at least 5 different memory optimization techniques
+- Apply at least 6 different memory optimization techniques
 - The script must still train the model correctly
 
 Submit your complete optimized training script using submit_answer.
@@ -164,7 +163,7 @@ def test_code_runs(code: str) -> tuple[bool, str]:
             temp_path.unlink()
 
 
-def grading_func(result: Any) -> bool:
+def grading_func(result: Any) -> tuple[bool, str]:
     """
     Validates the memory-optimized training script.
 
@@ -173,11 +172,12 @@ def grading_func(result: Any) -> bool:
     2. At least 5 memory optimization techniques are applied
 
     Returns:
-        True if the script meets all requirements, False otherwise
+        Tuple of (success: bool, failure_reason: str)
+        failure_reason is empty string if success=True
     """
     if not result or not isinstance(result, str):
         print("FAIL: No code submitted or not a string")
-        return False
+        return False, "no_submission"
 
     code = result.strip()
 
@@ -194,7 +194,7 @@ def grading_func(result: Any) -> bool:
         ast.parse(code)
     except SyntaxError as e:
         print(f"FAIL: Syntax error in submitted code: {e}")
-        return False
+        return False, "syntax_error"
 
     # 2. Test that code actually runs
     print("\n=== Runtime Test ===")
@@ -203,7 +203,7 @@ def grading_func(result: Any) -> bool:
         print(f"✓ {run_msg}")
     else:
         print(f"✗ {run_msg}")
-        return False
+        return False, "runtime_error"
 
     # 3. Count optimization techniques
     print("\n=== Optimization Detection ===\n")
@@ -235,9 +235,9 @@ def grading_func(result: Any) -> bool:
     # 4. Check if enough optimizations
     print("\n=== Final Evaluation ===")
 
-    if count >= 4:
-        print(f"PASS: Applied {count} memory optimizations (≥4 required)")
-        return True
+    if count >= 6:
+        print(f"PASS: Applied {count} memory optimizations (≥6 required)")
+        return True, ""
     else:
-        print(f"FAIL: Only {count} optimizations detected (need at least 4)")
-        return False
+        print(f"FAIL: Only {count} optimizations detected (need at least 6)")
+        return False, f"insufficient_optimizations ({count}/6)"

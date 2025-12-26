@@ -115,8 +115,8 @@ async def run_single_test(
     run_id: int,
     num_runs: int,
     verbose: bool = False,
-) -> tuple[int, bool, Any]:
-    """Run a single test iteration."""
+) -> tuple[int, bool, str, Any]:
+    """Run a single test iteration. Returns (run_id, success, failure_reason, result)."""
     if verbose:
         print(f"\n\n{'=' * 20} RUN {run_id}/{num_runs} {'=' * 20}")
 
@@ -128,16 +128,14 @@ async def run_single_test(
         verbose=verbose,
     )
 
-    success = grading_func(result)
-
-    display_result = "Code submitted" if result else "No code submitted"
+    success, failure_reason = grading_func(result)
 
     if success:
         print(f"✓ Run {run_id}: SUCCESS")
     else:
-        print(f"✗ Run {run_id}: FAILURE - {display_result}")
+        print(f"✗ Run {run_id}: FAILURE - {failure_reason}")
 
-    return run_id, success, result
+    return run_id, success, failure_reason, result
 
 
 async def main(num_runs: int = 1, verbose: bool = True):
@@ -154,14 +152,26 @@ async def main(num_runs: int = 1, verbose: bool = True):
         )
         results.append(result)
 
-    successes = sum(success for _, success, _ in results)
+    successes = sum(success for _, success, _, _ in results)
     pass_rate = (successes / num_runs) * 100
+
+    # Count failure reasons
+    failure_counts: dict[str, int] = {}
+    for _, success, failure_reason, _ in results:
+        if not success:
+            failure_counts[failure_reason] = failure_counts.get(failure_reason, 0) + 1
 
     print(f"\n{'=' * 60}")
     print("Test Results:")
     print(f"  Passed: {successes}/{num_runs}")
     print(f"  Failed: {num_runs - successes}/{num_runs}")
     print(f"  Pass Rate: {pass_rate:.1f}%")
+
+    if failure_counts:
+        print(f"\nFailure Breakdown:")
+        for reason, count in sorted(failure_counts.items(), key=lambda x: -x[1]):
+            print(f"  {reason}: {count}")
+
     print(f"{'=' * 60}")
 
 

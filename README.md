@@ -111,6 +111,92 @@ python test_task.py --robotics   # Data-efficient robotics
 - Average score across all ideas
 - Verdict: EXCEPTIONAL / GOOD / MEDIOCRE / POOR
 
+### Evaluation Results
+
+| Topic | Average Score | Verdict | Result |
+|-------|---------------|---------|--------|
+| RL | 5.53/10 | MEDIOCRE | FAIL |
+| Robotics | 5.75/10 | MEDIOCRE | FAIL |
+| Memory | 5.6/10 | MEDIOCRE | FAIL |
+
+---
+
+### Detailed Analysis: RL Topic
+
+**What Haiku Proposed** (3 ideas in ~32s):
+1. **Adaptive Reward Model Updating** - Continual learning for reward models as human preferences evolve
+2. **Hierarchical Preference Learning** - Multi-level RLHF (token, response, conversation levels)
+3. **Modular Alignment Networks** - Separate modules for helpfulness, harmlessness, honesty
+
+**Why Sonnet Gave Low Scores**:
+
+| Idea | Score | Key Criticism |
+|------|-------|---------------|
+| Adaptive Reward | 5.85/10 | "Continual learning for reward models is unsolved - catastrophic forgetting problem. Prior work (Scialom et al., 2022) shows this degrades performance without massive compute" |
+| Hierarchical Pref | 5.55/10 | "Multi-level optimization is extremely unstable. No evidence hierarchical RL helps for RLHF specifically. Incremental improvement at best" |
+| Modular Alignment | 5.2/10 | "No evidence alignment dimensions are separable. Constitutional AI already handles multi-objective alignment without modular architecture" |
+
+**Judge's Summary**: *"These read like academic exercise ('let's apply continual RL concepts to RLHF') rather than problem-driven research ('we discovered this critical failure mode in production and here's a solution'). Grade: C+ / MEDIOCRE"*
+
+---
+
+### Detailed Analysis: Robotics Topic
+
+**What Haiku Proposed** (3 ideas in ~37s):
+1. **AMARET** - Adaptive Multimodal Representation with Elastic Task-Weighted Learning
+2. **HiSR** - Hierarchical Simulation-Reality Bridging through Generative World Models
+3. **FedSkill** - Privacy-Aware Federated Continual Learning for Robot Fleets
+
+**Why Sonnet Gave Low Scores**:
+
+| Idea | Score | Key Criticism |
+|------|-------|---------------|
+| AMARET | 4.6/10 | "Solving a non-problem. RT-2 and RoboCat show frozen encoders + fine-tuning works. 5 interacting components with no clear ablation path - Occam's Razor violation" |
+| HiSR | 6.05/10 | "No evidence hierarchical world models help - Dreamer uses flat latents and works well. 3 world models + 3 discriminators = adversarial training nightmare" |
+| FedSkill | 6.6/10 | "Best of the three. Clearest business model (privacy + bandwidth). But Tesla FSD uses centralized learning - why? Centralized is simpler and works better" |
+
+**Judge's Summary**: *"FedSkill is the most pragmatic and could be a solid product/deployment innovation, but it's not going to win you best paper at CoRL or RSS. AMARET should be deprioritized - solving a problem that may not exist."*
+
+---
+
+### Detailed Analysis: Memory Topic
+
+**What Haiku Proposed** (3 ideas in ~32s):
+1. **AMTS** - Adaptive Memory Triaging System (learned policy for memory placement)
+2. **Temporal Memory Graphs** - Causal reasoning layer for temporal consistency
+3. **SFMCO** - Strategic Forgetting and Memory Consolidation Optimizer
+
+**Why Sonnet Gave Low Scores**:
+
+| Idea | Score | Key Criticism |
+|------|-------|---------------|
+| AMTS | 5.0/10 | "Policy network training signal is extremely weak. Continual learning/parametric tier is unsolved. LangChain/LlamaIndex already do memory management - crowded market" |
+| Temporal Graphs | 5.1/10 | "Causal extraction from natural language is unsolved. Counterfactual reasoning is philosophically and technically hard. Pearl's framework is 30+ years old" |
+| SFMCO | 6.7/10 | "Best idea. Addresses urgent pain point (Character.AI users report coherence degrading after weeks). But lossy consolidation could lose critical info (allergies, legal constraints)" |
+
+**Judge's Summary**: *"None are exceptional. Best idea (SFMCO) is promising but not paradigm-shifting - more like 'better memory management' than transformers or RLHF. Recommendation: Pursue SFMCO, deprioritize others."*
+
+---
+
+### Why All Topics Failed
+
+The Sonnet extended thinking judge (~150s of reasoning) consistently penalizes:
+
+1. **Lack of Problem Evidence**: Ideas propose solutions without proving the problem exists
+   - "RT-2 shows frozen encoders work" → adaptive representations may be unnecessary
+   - "Tesla uses centralized learning" → federated approach needs justification
+
+2. **Unsolved Dependencies**: Ideas rely on components that are open research problems
+   - Continual learning without catastrophic forgetting
+   - Causal extraction from natural language
+   - Hierarchical world models outperforming flat models
+
+3. **Complexity vs. Baselines**: Simpler approaches often work as well
+   - 5-component systems vs. frozen encoder + fine-tuning
+   - Hierarchical discriminators vs. domain randomization + scale
+
+4. **Academic Framing**: Ideas read as "let's combine X and Y" rather than "we observed failure mode Z"
+
 ## Titans Paper Implementation Task
 
 Tests whether an agent can implement a research paper architecture from a vague description, getting all the technical details right.
@@ -134,7 +220,9 @@ Given a simple Transformer and the instruction to implement the **Titans archite
 
 ### Progressive Evaluation Results (10 runs)
 
-Tests agent's ability to derive Titans architecture concepts from first principles:
+Tests agent's ability to derive Titans architecture concepts from first principles.
+
+#### Without Pseudocode Requirement
 
 | Step | Concept | Pass Rate | Why It Fails |
 |------|---------|-----------|--------------|
@@ -145,6 +233,33 @@ Tests agent's ability to derive Titans architecture concepts from first principl
 | 5 | Full Implementation | 70% | Often missing 1-2 components: decay term, sequential loop, or outer product |
 
 **Overall Pass Rate: 0%** (requires 4/5 steps)
+
+#### With Pseudocode Requirement (Ablation)
+
+Adding "provide pseudocode" to each prompt forces the model to be more concrete:
+
+| Step | Concept | Pass Rate | Why It Fails |
+|------|---------|-----------|--------------|
+| 1 | Memory Structure (associative matrix) | 0% | Still proposes K,V caches - pseudocode doesn't change the fundamental architecture choice |
+| 2 | Filtering/Surprise mechanism | **90%** | Pseudocode forces explicit `if surprise > threshold` logic, which the judge can verify |
+| 3 | Update Rule with Decay | **30%** | Some now include `M = decay * M + ...` in pseudocode, but many still forget decay |
+| 4 | Attention-Memory Fusion | 70% | Slight regression - pseudocode sometimes omits the `(1-g)` complement pattern |
+| 5 | Full Implementation | **90%** | Code requirement already forces concreteness; pseudocode primes better structure |
+
+**Overall Pass Rate: 20%** (2/10 passed)
+
+#### Comparison Summary
+
+| Step | Concept | Without Pseudocode | With Pseudocode | Delta |
+|------|---------|-------------------|-----------------|-------|
+| 1 | Memory Structure | 0% | 0% | — |
+| 2 | Filtering/Surprise | 20% | **90%** | **+70%** |
+| 3 | Update Rule with Decay | 10% | **30%** | **+20%** |
+| 4 | Attention-Memory Fusion | 90% | 70% | -20% |
+| 5 | Full Implementation | 70% | **90%** | **+20%** |
+| **Overall** | | **0%** | **20%** | **+20%** |
+
+**Key Insight**: Asking for pseudocode dramatically improves Steps 2, 3, and 5 because it forces the model to commit to concrete mechanisms rather than vague descriptions. Step 1 remains at 0% because the fundamental architectural choice (associative matrix vs. K,V cache) isn't affected by asking for pseudocode - it's a conceptual gap.
 
 This is intentionally difficult - the prompts are open-ended and require the agent to independently derive concepts like outer products, surprise-based gating, and decay mechanisms. The first 3 steps consistently fail because Haiku defaults to standard attention-style architectures rather than the specific Titans design patterns.
 
@@ -203,32 +318,52 @@ Tests whether an agent can apply multiple GPU memory optimization techniques to 
 
 ### The Challenge
 
-Given a baseline training script, apply memory optimizations. Must include:
+Given a baseline training script with no optimizations, the agent must apply at least 6 different memory optimization techniques while keeping the code runnable.
 
-**Baseline (required)**:
-- Mixed Precision Training (AMP)
-- Gradient Checkpointing
-- Scaled Dot Product Attention (FlashAttention)
-
-**Additional (need 2+ to beat baseline)**:
-- Gradient Accumulation
-- Memory-efficient Optimizers (8-bit Adam, Adafactor)
-- Explicit Memory Management (empty_cache, del tensors)
-- CPU Offloading / Pin Memory
-- torch.compile
-- In-place Operations
+**Possible Optimizations (11 total)**:
+1. Mixed Precision Training (AMP) - `autocast`, `GradScaler`
+2. Gradient Checkpointing - `torch.utils.checkpoint`
+3. SDPA/FlashAttention - `F.scaled_dot_product_attention`
+4. Gradient Accumulation - `accumulation_steps`
+5. Memory-efficient Optimizer - `set_to_none=True`, `fused=True`
+6. Explicit Memory Management - `torch.cuda.empty_cache()`, `del outputs`
+7. CPU Offloading / Pin Memory - `pin_memory=True`
+8. Micro-batching - `micro_batch_size`, `effective_batch_size`
+9. In-place Operations - `inplace=True`
+10. torch.compile - `torch.compile()`
+11. Memory Format Optimization - `channels_last`
 
 ### Grading
 
-- **Regex-based checks** for optimization patterns
-- Must have all 3 baseline + at least 2 additional
-- Reference solution in `train_optimized_solution.py`
+Two checks must pass:
+1. **Runtime Test**: Code must actually run without errors (tested via subprocess)
+2. **Optimization Count**: Must have ≥6 optimizations detected via regex
+
+### Results (10 runs)
+
+| Metric | Value |
+|--------|-------|
+| **Pass Rate** | **10%** (1/10) |
+| Passed | 1 |
+| Failed | 9 |
+
+**Failure Breakdown**:
+- `runtime_error`: 7 (70%) - mostly wrong autocast API (`device_type` arg not supported)
+- `insufficient_optimizations`: 2 (20%) - code runs but only 5/6 optimizations
+
+### Why It's Hard
+
+- No hand-holding in the prompt - agent must know PyTorch APIs correctly
+- Common failure: using `autocast(device_type=...)` which is wrong for `torch.cuda.amp.autocast`
+- Must balance adding optimizations without breaking the code
+- Some optimizations (like `fused=True`) fail on CPU
 
 ### Run Tests
 
 ```bash
 cd tasks/memory-optimizations
-python test_grading.py
+python evaluation.py -n 10 -q  # 10 runs, quiet mode
+python evaluation.py -n 1      # Single run, verbose
 ```
 
 ---
@@ -238,18 +373,18 @@ python test_grading.py
 | Task | Purpose | Grading Method | Pass Threshold | Observed Success Rate |
 |------|---------|----------------|----------------|----------------------|
 | Literature Review | Research synthesis | LLM-as-Judge (Sonnet) | 7/10 | ~60-80% |
-| Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL | ~70% (avg score: 6.5/10) |
+| Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL | **0%** (avg score: 5.6/10) |
 | Titans Progressive | Derive architecture concepts | LLM-as-Judge (Sonnet) | 4/5 steps | **0%** (intentionally hard) |
 | FSDP Training | Distributed training | Regex checks | 9/11 | **100%** |
-| Memory Optimizations | GPU memory reduction | Regex checks | 5+ optimizations | ~90% |
+| Memory Optimizations | GPU memory reduction | Runtime test + Regex | 6+ optimizations + runs | **10%** (runtime errors) |
 
 ### Sample Results
 
-**Idea Proposal (Memory topic)**:
-- Haiku generated 3 ideas in ~43s (2 agent steps)
-- Sonnet extended thinking evaluated for ~120s
-- Individual scores: 5.75/10, 7.6/10, 6.2/10
-- Average: **6.52/10** → Verdict: **GOOD**
+**Idea Proposal**:
+- Haiku generates 3 ideas in ~30-40s (2 agent steps)
+- Sonnet extended thinking evaluates for ~150s with brutal analysis
+- All topics scored MEDIOCRE (5.5-5.8/10) and FAILED
+- Judge cites lack of prior work evidence, technical feasibility concerns, and "academic exercise" framing
 
 **Literature Review**:
 - Haiku agent iteratively searched papers, extracted introductions/results
