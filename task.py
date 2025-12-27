@@ -1,112 +1,24 @@
 """
-Literature Review Task Definition
+Neural Memory Implementation Task
 
-This file contains:
-- PROMPT: The challenge prompt given to the agent
-- TOOLS: The tool definitions available to the agent
-- TOOL_HANDLERS: The tool handler functions
-- grading_func: Function that validates the agent's answer
+Tests whether an agent can implement a neural long-term memory module
+from biological hints, getting all the technical details right.
+
+Pass Rate: ~10% (Sonnet 4.5)
 """
 
-from collections.abc import Callable
-from typing import Any, TypedDict
+import importlib.util
+from pathlib import Path
 
-from anthropic.types import ToolUnionParam
+# Load the combined task
+task_path = Path(__file__).parent / "tasks" / "titan-paper-implementation" / "combined_task.py"
 
-from tools.web_search import TOOLS as WEB_TOOLS, HANDLERS as WEB_HANDLERS
+spec = importlib.util.spec_from_file_location("neural_memory_task", task_path)
+neural_memory_task = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(neural_memory_task)
 
-
-class SubmitAnswerToolResult(TypedDict):
-    answer: Any
-    submitted: bool
-
-
-def submit_answer_tool(answer: Any) -> SubmitAnswerToolResult:
-    """
-    Tool for submitting the final answer.
-    """
-    return {"answer": answer, "submitted": True}
-
-
-# Tool definitions for Anthropic API
-SUBMIT_TOOL = {
-    "name": "submit_answer",
-    "description": "Submit your final literature review",
-    "input_schema": {
-        "type": "object",
-        "properties": {"answer": {"type": "string", "description": "The complete literature review"}},
-        "required": ["answer"],
-    },
-}
-
-TOOLS: list[ToolUnionParam] = WEB_TOOLS + [SUBMIT_TOOL]
-
-# Tool handlers mapping
-TOOL_HANDLERS: dict[str, Callable[..., Any]] = {
-    **WEB_HANDLERS,
-    "submit_answer": submit_answer_tool,
-}
-
-
-# The research topic for the literature review
-TOPIC = "giving LLMs long term memory"
-
-# The challenge prompt
-PROMPT = f"""You are a research assistant conducting a literature review on: "{TOPIC}"
-
-Your goal is to create a comprehensive literature review by:
-
-1. Search for the most relevant recent papers on this topic (use web_search)
-2. For the top 3-5 papers, get their detailed summaries (use get_paper_with_tldr)
-3. For the most relevant paper, explore its references to find foundational work (use get_paper_references)
-4. Synthesize everything into a structured literature review
-
-Your final review should cover:
-- Main approaches/methods being used in this area
-- Key results and findings from important papers
-- How different papers relate to each other
-- Current trends and potential gaps in the research
-
-Use the available tools to gather information, then submit your complete literature review using submit_answer.
-Be thorough but concise. Cite specific papers by title when discussing their contributions."""
-
-
-# Grading function - validates the agent's submitted answer
-def grading_func(result: Any) -> bool:
-    """
-    Validates the literature review.
-
-    Checks that the review:
-    1. Is a non-empty string of reasonable length
-    2. Mentions specific paper titles
-    3. Discusses methods/approaches
-    4. Includes findings/results
-
-    Args:
-        result: The submitted literature review
-
-    Returns:
-        True if the review meets quality criteria, False otherwise
-    """
-    if not result or not isinstance(result, str):
-        return False
-
-    review = result.lower()
-
-    # Must be substantial (at least 500 chars)
-    if len(result) < 500:
-        return False
-
-    # Should mention memory-related concepts
-    memory_terms = ["memory", "long-term", "retrieval", "context", "storage"]
-    has_memory_discussion = any(term in review for term in memory_terms)
-
-    # Should discuss methods/approaches
-    method_terms = ["method", "approach", "technique", "architecture", "model", "framework"]
-    has_methods = any(term in review for term in method_terms)
-
-    # Should mention results/findings
-    result_terms = ["result", "finding", "show", "demonstrate", "achieve", "performance", "improve"]
-    has_results = any(term in review for term in result_terms)
-
-    return has_memory_discussion and has_methods and has_results
+# Re-export the required interface
+PROMPT = neural_memory_task.PROMPT
+TOOLS = neural_memory_task.TOOLS
+TOOL_HANDLERS = neural_memory_task.TOOL_HANDLERS
+grading_func = neural_memory_task.grading_func

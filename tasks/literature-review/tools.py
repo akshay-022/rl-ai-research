@@ -461,56 +461,69 @@ def _find_methodology_section(text):
     return method_text
 
 
-def _find_results_section(text):
+def _extract_section_with_llm(text, section_type="results"):
     """
-    Extract the results/experiments section from paper text.
-    This contains quantitative findings and performance numbers.
+    Use an LLM to extract a specific section from paper text.
+    Much more robust than regex-based extraction.
     """
-    import re
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
-    # Common section header patterns for results
-    results_patterns = [
-        r'(?:^|\n)\s*\d+\.?\s*(?:Experiment(?:s|al)?|Result(?:s)?|Evaluation|Empirical)\s*\n',
-        r'(?:^|\n)\s*(?:IV|V|VI)\.?\s*(?:Experiment|Result|Evaluation)\s*\n',
-        r'(?:^|\n)\s*(?:EXPERIMENT|RESULT|EVALUATION)\s*\n',
-        r'(?:^|\n)\s*\d+\.?\s*(?:Experiment(?:s|al)?\s+(?:Result|Setup|Evaluation))\s*\n',
-    ]
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
 
-    # Patterns that mark end of results
-    end_patterns = [
-        r'(?:^|\n)\s*\d+\.?\s*(?:Conclusion|Discussion|Limitation|Related\s*Work|Future)',
-        r'(?:^|\n)\s*(?:V|VI|VII)\.?\s*(?:Conclusion|Discussion|Limitation)',
-        r'(?:^|\n)\s*(?:CONCLUSION|DISCUSSION|LIMITATION)',
-        r'(?:^|\n)\s*(?:Acknowledg|Reference)',
-    ]
+        if section_type == "results":
+            prompt = """Extract the RESULTS/EXPERIMENTS section from this paper text.
+Focus on finding:
+- Quantitative performance numbers (accuracy, F1, perplexity, etc.)
+- Benchmark comparisons with baselines
+- Tables with numerical results
+- Key findings and metrics
 
-    # Find results start
-    results_start = None
-    for pattern in results_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            results_start = match.end()
-            break
+Return ONLY the extracted results section text. If you can't find a clear results section,
+extract any paragraphs that contain quantitative findings or performance comparisons.
+Do not add any commentary - just return the extracted text."""
+        elif section_type == "methodology":
+            prompt = """Extract the METHODOLOGY/METHODS section from this paper text.
+Focus on finding:
+- How the approach/model works
+- Architecture details
+- Algorithm descriptions
+- Technical implementation details
 
-    if results_start is None:
+Return ONLY the extracted methodology section text. If you can't find a clear methods section,
+extract paragraphs that describe how the approach works.
+Do not add any commentary - just return the extracted text."""
+        else:
+            prompt = f"Extract the {section_type} section from this paper text. Return only the extracted text."
+
+        # Truncate text if too long for context
+        max_chars = 50000
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n[... truncated]"
+
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=4000,
+            messages=[{
+                "role": "user",
+                "content": f"{prompt}\n\n---\nPAPER TEXT:\n{text}"
+            }]
+        )
+
+        extracted = response.content[0].text.strip()
+
+        # Limit output length
+        if len(extracted) > 6000:
+            extracted = extracted[:6000] + "\n[... truncated]"
+
+        return extracted if extracted else None
+
+    except Exception as e:
+        print(f"  LLM extraction error: {e}")
         return None
-
-    # Find results end
-    results_end = len(text)
-    remaining_text = text[results_start:]
-    for pattern in end_patterns:
-        match = re.search(pattern, remaining_text, re.IGNORECASE)
-        if match:
-            results_end = results_start + match.start()
-            break
-
-    results_text = text[results_start:results_end].strip()
-
-    # Limit length
-    if len(results_text) > 6000:
-        results_text = results_text[:6000] + "\n[... truncated]"
-
-    return results_text
 
 
 def _get_paper_metadata(paper_id):
@@ -615,6 +628,7 @@ def get_paper_methodology(paper_id):
     """
     Get the METHODOLOGY/METHODS section of a paper - this explains how the
     approach works, the architecture, and technical details.
+    Uses LLM to extract the section robustly.
     """
     if not paper_id or not str(paper_id).strip():
         return {"error": "Empty paper ID"}
@@ -637,8 +651,8 @@ def get_paper_methodology(paper_id):
             "error": f"Could not download PDF: {error}",
         }
 
-    # Extract text from pages 2-10 (methods usually after intro)
-    text, error = _extract_pdf_text(pdf_data, start_page=1, end_page=10)
+    # Extract text from pages 2-15 (methods can span multiple sections)
+    text, error = _extract_pdf_text(pdf_data, start_page=1, end_page=15)
     if error:
         return {
             **metadata,
@@ -646,13 +660,14 @@ def get_paper_methodology(paper_id):
             "error": f"Could not extract text: {error}",
         }
 
-    method_text = _find_methodology_section(text)
+    # Use LLM to extract methodology section
+    method_text = _extract_section_with_llm(text, section_type="methodology")
 
     if not method_text:
         return {
             **metadata,
             "methodology": None,
-            "error": "Could not find methodology section in paper",
+            "error": "Could not extract methodology section from paper",
         }
 
     return {
@@ -666,6 +681,7 @@ def get_paper_results(paper_id):
     """
     Get the RESULTS/EXPERIMENTS section of a paper - this contains quantitative
     findings, performance numbers, benchmarks, and comparisons.
+    Uses LLM to extract the section robustly.
     """
     if not paper_id or not str(paper_id).strip():
         return {"error": "Empty paper ID"}
@@ -688,8 +704,8 @@ def get_paper_results(paper_id):
             "error": f"Could not download PDF: {error}",
         }
 
-    # Extract text from pages 5-15 (results usually in middle/end)
-    text, error = _extract_pdf_text(pdf_data, start_page=4, end_page=15)
+    # Extract text from pages 3-20 (results can be anywhere in the paper)
+    text, error = _extract_pdf_text(pdf_data, start_page=2, end_page=20)
     if error:
         return {
             **metadata,
@@ -697,13 +713,14 @@ def get_paper_results(paper_id):
             "error": f"Could not extract text: {error}",
         }
 
-    results_text = _find_results_section(text)
+    # Use LLM to extract results section
+    results_text = _extract_section_with_llm(text, section_type="results")
 
     if not results_text:
         return {
             **metadata,
             "results": None,
-            "error": "Could not find results section in paper",
+            "error": "Could not extract results section from paper",
         }
 
     return {

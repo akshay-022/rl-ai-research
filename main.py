@@ -3,8 +3,12 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from dotenv import load_dotenv
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, ToolUnionParam
+
+# Load environment variables from .env file
+load_dotenv()
 
 from task import PROMPT, TOOL_HANDLERS, TOOLS, grading_func
 
@@ -172,7 +176,7 @@ async def run_single_test(
 
 async def main(concurrent: bool = True):
     # Run the test - reduced for initial testing
-    num_runs = 1
+    num_runs = 5
 
     execution_mode = "concurrently" if concurrent else "sequentially"
     print(f"Running {num_runs} test iterations {execution_mode}...")

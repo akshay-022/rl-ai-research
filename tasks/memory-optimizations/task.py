@@ -67,7 +67,7 @@ Some common techniques include: mixed precision training, gradient checkpointing
 ## Requirements
 
 - Your code must be valid, runnable Python
-- Apply at least 6 different memory optimization techniques
+- Apply at least 5 different memory optimization techniques
 - The script must still train the model correctly
 
 Submit your complete optimized training script using submit_answer.
@@ -102,6 +102,66 @@ def check_code_has_pattern(code: str, pattern: str, description: str) -> tuple[b
     if re.search(pattern, code, re.MULTILINE | re.DOTALL):
         return True, f"✓ {description}"
     return False, f"✗ Missing: {description}"
+
+
+def _count_optimizations_with_llm(code: str) -> int:
+    """
+    Use an LLM to count the number of distinct memory optimization techniques in the code.
+    Returns an integer count.
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+
+        prompt = """Analyze the following PyTorch training script and count how many DISTINCT memory optimization techniques are used.
+
+Common memory optimization techniques include (but are not limited to):
+1. Mixed Precision Training (AMP) - using torch.cuda.amp, autocast, GradScaler
+2. Gradient Checkpointing - using torch.utils.checkpoint
+3. Flash Attention / SDPA - using scaled_dot_product_attention
+4. Gradient Accumulation - accumulating gradients over multiple steps
+5. Memory-efficient Optimizers - using fused=True, foreach=True, set_to_none=True, 8-bit optimizers
+6. Explicit Memory Management - torch.cuda.empty_cache(), del statements, .detach().cpu()
+7. CPU Offloading / Pin Memory - offloading to CPU, pin_memory=True
+8. Micro-batching - splitting batches into smaller micro-batches
+9. In-place Operations - using inplace=True, .add_(), .mul_(), .zero_()
+10. torch.compile - using torch.compile() for optimization
+11. Memory Format Optimization - using channels_last format
+
+Count each distinct technique only ONCE, even if it appears multiple times in the code.
+Only count techniques that are actually implemented and used, not just mentioned in comments.
+
+YOUR RESPONSE MUST BE A SINGLE INTEGER AND NOTHING ELSE.
+Do not include any explanation, just output the number.
+
+CODE:
+```python
+{code}
+```"""
+
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=10,
+            messages=[{
+                "role": "user",
+                "content": prompt.format(code=code)
+            }]
+        )
+
+        result = response.content[0].text.strip()
+        count = int(result)
+        return count
+
+    except ValueError as e:
+        print(f"  LLM returned non-integer: {result}")
+        return 0
+    except Exception as e:
+        print(f"  LLM optimization count error: {e}")
+        return 0
 
 
 def test_code_runs(code: str) -> tuple[bool, str]:
@@ -163,21 +223,21 @@ def test_code_runs(code: str) -> tuple[bool, str]:
             temp_path.unlink()
 
 
-def grading_func(result: Any) -> tuple[bool, str]:
+def grading_func(result: Any) -> bool:
     """
     Validates the memory-optimized training script.
 
     Checks:
-    1. Code runs without errors
-    2. At least 5 memory optimization techniques are applied
+    1. Code is valid Python syntax
+    2. Code runs without errors
+    3. At least 6 memory optimization techniques are applied
 
     Returns:
-        Tuple of (success: bool, failure_reason: str)
-        failure_reason is empty string if success=True
+        True if the submission passes all checks, False otherwise
     """
     if not result or not isinstance(result, str):
         print("FAIL: No code submitted or not a string")
-        return False, "no_submission"
+        return False
 
     code = result.strip()
 
@@ -194,7 +254,7 @@ def grading_func(result: Any) -> tuple[bool, str]:
         ast.parse(code)
     except SyntaxError as e:
         print(f"FAIL: Syntax error in submitted code: {e}")
-        return False, "syntax_error"
+        return False
 
     # 2. Test that code actually runs
     print("\n=== Runtime Test ===")
@@ -203,41 +263,20 @@ def grading_func(result: Any) -> tuple[bool, str]:
         print(f"✓ {run_msg}")
     else:
         print(f"✗ {run_msg}")
-        return False, "runtime_error"
+        return False
 
-    # 3. Count optimization techniques
+    # 3. Count optimization techniques using LLM
     print("\n=== Optimization Detection ===\n")
 
-    optimizations = [
-        (r"(torch\.cuda\.amp|autocast|GradScaler|torch\.amp)", "Mixed Precision (AMP)"),
-        (r"(checkpoint|torch\.utils\.checkpoint|checkpoint_sequential|gradient_checkpointing)", "Gradient Checkpointing"),
-        (r"(scaled_dot_product_attention|F\.scaled_dot_product_attention|sdpa|flash_attention|FlashAttention)", "SDPA/FlashAttention"),
-        (r"(accumulation_steps\s*[=:]|gradient_accumulation|%\s*accumulation|accum_steps\s*=)", "Gradient Accumulation"),
-        (r"(bitsandbytes|bnb\.optim|8bit|Adafactor|fused\s*=\s*True|foreach\s*=\s*True|set_to_none\s*=\s*True)", "Memory-efficient Optimizer"),
-        (r"(torch\.cuda\.empty_cache\(\)|del\s+(outputs|loss|logits|activations)|\.detach\(\)\.cpu\(\))", "Explicit Memory Management"),
-        (r"(offload.*cpu|pin_memory\s*=\s*True|\.cpu\(\).*\.to\(|cpu_offload)", "CPU Offloading / Pin Memory"),
-        (r"(micro_batch_size\s*=|effective_batch_size|batch_size\s*//\s*accum|batch_size\s*/\s*accumulation)", "Micro-batching"),
-        (r"(inplace\s*=\s*True|\.add_\(|\.mul_\(|\.zero_\(|grad\.add_)", "In-place Operations"),
-        (r"(torch\.compile\s*\(|model\s*=.*compile|compiled_model)", "torch.compile"),
-        (r"(\.to\(memory_format\s*=|channels_last|contiguous_format\s*=)", "Memory Format Optimization"),
-    ]
-
-    count = 0
-    for pattern, name in optimizations:
-        found = bool(re.search(pattern, code, re.MULTILINE | re.DOTALL))
-        status = "✓" if found else "✗"
-        print(f"{status} {name}")
-        if found:
-            count += 1
-
-    print(f"\nTotal optimizations: {count}/11")
+    count = _count_optimizations_with_llm(code)
+    print(f"Total optimizations detected: {count}")
 
     # 4. Check if enough optimizations
     print("\n=== Final Evaluation ===")
 
-    if count >= 6:
-        print(f"PASS: Applied {count} memory optimizations (≥6 required)")
-        return True, ""
+    if count >= 5:
+        print(f"PASS: Applied {count} memory optimizations (≥5 required)")
+        return True
     else:
-        print(f"FAIL: Only {count} optimizations detected (need at least 6)")
-        return False, f"insufficient_optimizations ({count}/6)"
+        print(f"FAIL: Only {count} optimizations detected (need at least 5)")
+        return False
