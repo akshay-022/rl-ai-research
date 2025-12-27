@@ -16,6 +16,8 @@ This is the biggest unhobbling needed to make AI superhuman, all current RL is c
 
 Moreover, I believe these continual learning models must have memory and it MUST be in the model weights, and not simply in stored context. The model weights are much higher dimensional, that is also the way our brain works (memory is stored in synapse weights).
 
+I really like the paper Titans: Learning to Memorize at Test Time (by Google) - https://arxiv.org/abs/2501.00663, so I use that to give hints and get to design experiments. Verified based on the implementation in the paper.
+
 ### The Challenge
 
 Given a simple transformer and hints about how biological memory works, the agent must implement a Neural Long-Term Memory module with 6 specific components:
@@ -26,6 +28,28 @@ Given a simple transformer and hints about how biological memory works, the agen
 4. **Outer Product for Association** - V ⊗ K^T for key-value binding
 5. **Recurrent Memory Update** - Per-timestep loop updating memory state
 6. **Memory-Attention Gating** - Learned fusion: `g * attn + (1-g) * mem`
+
+### The Prompt
+
+```
+Standard attention has quadratic cost and a fixed context window. Your goal is to add an auxiliary memory system that can store and retrieve information beyond the attention window.
+
+Think about how biological memory works:
+- The brain doesn't remember everything equally - it prioritizes surprising or novel information
+- Old memories fade over time unless reinforced
+- Memory involves associating concepts together (binding keys to values)
+- We blend immediate context with long-term knowledge
+
+When does a human update their "brain weights"? Your memory system should capture this principle.
+
+Requirements:
+1. Create a `NeuralMemory` module that maintains a memory matrix M (shape: d_mem x d_mem)
+2. Process tokens recurrently (one at a time), updating M at each step
+3. Use outer products to store associations: M += V ⊗ K^T binds values to keys
+4. Preserve the input/output signature (`input_ids` -> `logits`)
+
+Important: Make parameters learnable (nn.Parameter) rather than hardcoding values. Use sigmoid activations for gating. The model should be able to learn the right behavior through training.
+```
 
 ### Why This Task Matters
 
@@ -58,6 +82,20 @@ I ran several ablations to calibrate the task difficulty:
 
 The key insight: giving the outer product formula gets models to the right memory structure, but they still need to derive the surprise mechanism and fusion pattern themselves. That's what makes it a 10% task instead of 0% or 60%.
 
+### Sister Experiment: Progressive 5-Step Evaluation
+
+I also ran a decomposed version where instead of asking for the full implementation, I tested each concept independently in parallel:
+
+| Step | Concept | Without Pseudocode | With Pseudocode |
+|------|---------|-------------------|-----------------|
+| 1 | Memory Structure (associative matrix) | 0% | 0% |
+| 2 | Filtering/Surprise mechanism | 20% | 90% |
+| 3 | Update Rule with Decay | 10% | 30% |
+| 4 | Attention-Memory Fusion | 90% | 70% |
+| 5 | Full Implementation | 70% | 90% |
+
+**Key Insight**: Asking for pseudocode dramatically improves Steps 2, 3, and 5 because it forces the model to commit to concrete mechanisms rather than vague descriptions. Step 1 remains at 0% because the fundamental architectural choice (associative matrix vs. K,V cache) isn't affected by asking for pseudocode - it's a conceptual gap.
+
 ---
 
 ## Other Experiments
@@ -66,19 +104,30 @@ I wanted to test the limits of AI in how well it can do literature survey, how g
 
 ### Task 2: Literature Review
 
-**Pass Rate: 100% (8/10 score)**
+**Pass Rate: 100%**
 
-Tests how comprehensively an LLM can survey a research field.
+Tests how comprehensively an LLM can survey a research field in 3 areas - memory, RL and robotics.
+
+**The Prompt:**
+```
+Create a comprehensive literature review covering ALL major approaches:
+- Extended context windows (Gemini 1M, Longformer, RMT)
+- Retrieval-Augmented Generation (RAG, RETRO)
+- Summarization and context compression
+- Specialized memory architectures (MemGPT, LongMem)
+- Parametric memory (ROME/MEMIT, continual learning)
+
+For EACH approach, include specific papers with quantitative results.
+```
 
 **Tools provided:**
-- `web_search(query)` - Search arXiv/Semantic Scholar
-- `get_paper_introduction(paper_id)` - Extract intro (contains authors' lit review)
-- `get_paper_results(paper_id)` - Extract quantitative results
+- `web_search(query)` - Search arXiv/Semantic Scholar for papers
+- `get_paper_with_tldr(paper_id)` - Get paper details + AI-generated summary
+- `get_paper_introduction(paper_id)` - Extract intro section (contains authors' lit review)
+- `get_paper_results(paper_id)` - Extract quantitative results from PDF
+- `get_paper_references(paper_id)` - Get papers cited by a paper
 
-**Evaluation criteria:**
-- Coverage of major approaches (must cite specific papers + numbers)
-- Seminal works cited with results
-- Quality of synthesis (comparisons, trade-offs)
+**Evaluation:** LLM-as-Judge (Sonnet) grades against a 10-point rubric requiring specific papers + quantitative results for each approach (Passes if 7/10 or above). Mainly graded based on if it captures the right high level insights and results from papers, and if it references all the seminal papers. 
 
 **Result:** Agent produced 28K-character review with 20+ papers. Successfully found LongLoRA (4k→100k context), Infini-attention (96-100% at 1M tokens), MemGPT (92.5% vs 32.1% baseline).
 
@@ -86,24 +135,44 @@ Tests how comprehensively an LLM can survey a research field.
 
 ### Task 3: Idea Proposal
 
-**Pass Rate: 0% (avg 5.6/10)**
+**Pass Rate: 5.6/10**
 
-Tests research taste - can the model propose ideas that are both novel AND likely to succeed?
+Tests research taste - can the model propose ideas that are both novel AND likely to succeed.
 
-**Evaluation:** Sonnet extended thinking (~150s reasoning) judges each idea on:
+**The Prompt:**
+```
+You have access to literature reviews in RL, Memory, and Robotics.
+Propose 5-7 novel research ideas that:
+- Address REAL gaps in the literature
+- Have HIGH IMPACT if successful
+- Have BUSINESS VALUE (practical applications)
+- Are FEASIBLE within 1-2 years
+
+For each idea, provide: Problem, Approach, Why Now, Impact/Business/Feasibility scores, Key Risks.
+Prioritize by: (Impact * 0.4) + (Business Value * 0.4) + (Feasibility * 0.2)
+```
+
+**Tools provided:**
+- `get_all_literature()` - Read all 3 literature reviews
+- `get_literature(topic)` - Read specific topic (RL, Memory, Robotics)
+- `web_search(query)` - Search for additional papers
+
+**Evaluation:** Sonnet with extended thinking (~150s reasoning, 10k thinking tokens) judges each idea on:
 - Business Viability (30%)
 - Potential Upside (25%)
 - Likelihood of Success (30%)
 - Novelty (15%)
 
+Pass requires GOOD or EXCEPTIONAL verdict.
+
 **Why it fails consistently:**
 
-| Problem | Example |
-|---------|---------|
-| Lack of Problem Evidence | "RT-2 shows frozen encoders work" → adaptive representations unnecessary |
-| Unsolved Dependencies | Relies on continual learning without catastrophic forgetting |
-| Complexity vs Baselines | 5-component systems vs simple fine-tuning |
-| Academic Framing | "Let's combine X and Y" vs "we observed failure mode Z" |
+| Problem | What the judge says |
+|---------|---------------------|
+| Solving non-problems | "You propose adaptive encoders, but RT-2 already shows frozen encoders work fine" |
+| Unsolved dependencies | "Your idea assumes continual learning works without catastrophic forgetting - that's still an open problem" |
+| Over-engineering | "You have 5 interacting components when simple fine-tuning achieves similar results" |
+| Academic framing | "This reads as 'let's combine X and Y' instead of 'we observed failure mode Z and here's how to fix it'" |
 
 The judge's summary: *"These read like academic exercise rather than problem-driven research."*
 
@@ -114,6 +183,24 @@ The judge's summary: *"These read like academic exercise rather than problem-dri
 **Pass Rate: 33% (1/3)**
 
 Tests whether an agent can convert single-GPU training to distributed FSDP.
+
+**The Prompt:**
+```
+Convert the training script to use PyTorch FSDP. Your solution must:
+1. Initialize distributed training with NCCL backend
+2. Wrap model with FSDP using lambda_auto_wrap_policy (NOT transformer_auto_wrap_policy)
+3. Use DistributedSampler with set_epoch()
+4. Handle checkpointing correctly (rank 0 only, use FSDP.state_dict_type)
+5. Clean up process group at the end
+
+Use custom lambda that wraps TransformerBlock layers OR modules with >1M parameters.
+```
+
+**Tools provided:** Just `submit_answer` - no additional tools needed.
+
+**Evaluation:** LLM-as-Judge (Sonnet) with 10-point rubric:
+- Distributed init (1pt), FSDP wrapping (2pts), Data distribution (2pts), Checkpoint handling (2pts), Cleanup (1pt), Optimizer after FSDP (1pt), Overall correctness (1pt)
+- Pass threshold: 8/10
 
 **Common failures:**
 - Using `dist.get_rank()` instead of `os.environ["LOCAL_RANK"]` (breaks multi-node)
@@ -129,6 +216,23 @@ Tests whether an agent can convert single-GPU training to distributed FSDP.
 **Pass Rate: 10% (1/10)**
 
 Tests whether an agent can apply 6+ GPU memory optimizations while keeping code runnable.
+
+**The Prompt:**
+```
+Optimize the training script to reduce GPU memory usage.
+Apply memory optimization techniques you know (mixed precision, gradient checkpointing, etc.)
+
+Requirements:
+- Do NOT modify model architecture
+- Apply at least 5 different memory optimization techniques
+- Code must be valid, runnable Python
+```
+
+**Tools provided:** Just `submit_answer` - no additional tools needed.
+
+**Evaluation:** Two-step grading:
+1. **Runtime Test**: Code must actually run without errors (tested via subprocess with small model)
+2. **Optimization Count**: LLM (Haiku) counts distinct techniques - must have ≥5
 
 **Failure breakdown:**
 - 70% runtime errors (wrong `autocast` API)

@@ -98,7 +98,7 @@ Requirements:
 
 Important: Make parameters learnable (nn.Parameter) rather than hardcoding values. Use sigmoid activations for gating. The model should be able to learn the right behavior through training.
 
-Submit your complete, runnable Python code.
+IMPORTANT: You MUST use the `submit_answer` tool to submit your code. Pass ONLY the raw Python code as a string (no markdown, no explanations). Do not write code in your response - use the tool directly.
 """
 
 

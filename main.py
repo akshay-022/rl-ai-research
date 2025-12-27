@@ -12,7 +12,7 @@ load_dotenv()
 
 from task import PROMPT, TOOL_HANDLERS, TOOLS, grading_func
 
-MAX_TOKENS = 4000  # Increased for literature reviews
+MAX_TOKENS = 8000  # Increased for code generation tasks
 
 
 async def run_agent_loop(
@@ -20,7 +20,7 @@ async def run_agent_loop(
     tools: list[ToolUnionParam],
     tool_handlers: dict[str, Callable[..., Any]],
     max_steps: int = 20,
-    model: str = "claude-haiku-4-5",
+    model: str = "claude-sonnet-4-5-20250929",
     verbose: bool = True,
 ) -> Any | None:
     """
@@ -175,8 +175,8 @@ async def run_single_test(
 
 
 async def main(concurrent: bool = True):
-    # Run the test - reduced for initial testing
-    num_runs = 5
+    # Run 30 tests in parallel
+    num_runs = 30
 
     execution_mode = "concurrently" if concurrent else "sequentially"
     print(f"Running {num_runs} test iterations {execution_mode}...")
@@ -225,4 +225,4 @@ async def main(concurrent: bool = True):
 
 if __name__ == "__main__":
     # Set to True for concurrent execution, False for sequential execution
-    asyncio.run(main(concurrent=False))
+    asyncio.run(main(concurrent=True))
