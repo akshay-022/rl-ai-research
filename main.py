@@ -155,7 +155,7 @@ async def run_single_test(
         prompt=prompt,
         tools=tools,
         tool_handlers=tool_handlers,
-        max_steps=15,  # More steps for literature review
+        max_steps=1,  # Single step - just submit code
         verbose=verbose,
     )
 
@@ -175,8 +175,8 @@ async def run_single_test(
 
 
 async def main(concurrent: bool = True):
-    # Run 30 tests in parallel
-    num_runs = 30
+    # Run 10 tests
+    num_runs = 10
 
     execution_mode = "concurrently" if concurrent else "sequentially"
     print(f"Running {num_runs} test iterations {execution_mode}...")

@@ -253,3 +253,6 @@ Requirements:
 | Memory Optimizations | GPU optimization | 10% |
 
 The Neural Memory task is my main submission - it tests the most important capability (implementing novel architectures from high-level descriptions) at the right difficulty level (10% pass rate gives room for RL training signal).
+
+
+You can also find the code for individual tasks in the `tasks` directory.

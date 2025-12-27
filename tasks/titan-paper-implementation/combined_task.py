@@ -263,7 +263,7 @@ def grading_func(result: Any) -> bool:
     """
     Validates the Neural Memory implementation:
     1. First checks if the code executes correctly
-    2. Then uses Claude Sonnet 4.5 to evaluate architecture criteria
+    2. Then uses Claude Haiku 4.5 to evaluate architecture criteria
 
     Requires both execution success AND 6/6 criteria to pass.
     """
@@ -300,7 +300,7 @@ def grading_func(result: Any) -> bool:
         return False
 
     # Step 2: Use Claude Sonnet 4.5 to evaluate architecture
-    print("\n--- Step 2: Architecture Evaluation (Claude Sonnet 4.5) ---")
+    print("\n--- Step 2: Architecture Evaluation (Claude Haiku 4.5) ---")
 
     client = anthropic.Anthropic()
 
@@ -316,7 +316,7 @@ Evaluate this code against all 6 criteria. Be strict and thorough."""
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-haiku-4-5",
             max_tokens=2048,
             messages=[{
                 "role": "user",

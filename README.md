@@ -42,416 +42,262 @@ asyncio.run(main(concurrent=False))
 
 When running concurrently, results print as they complete (not in run order) for faster overall execution.
 
-## Literature Review Task
+# Final Documentation
 
-An agent that conducts automated literature reviews by searching papers, extracting key sections, and synthesizing findings.
+I was asked to create RL environments for an automated AI researcher. I found this assignment quite enjoyable, this is relevant to making AI disover new science to push humanity forward and I find that very exciting.
 
-### How it works
+Instead of just trying to implement a single coding task in pytorch that the model fails at, I wanted to run many experiments along multiple dimensions of research competency to see how good AI is at it currently.
 
-1. **Agent Tools**: The agent has access to:
-   - `web_search(query)` - Search arXiv/Semantic Scholar for papers
-   - `get_paper_with_tldr(paper_id)` - Get paper details + AI-generated summary
-   - `get_paper_introduction(paper_id)` - Extract intro section (contains authors' own lit review)
-   - `get_paper_results(paper_id)` - Extract results/experiments section
-   - `get_paper_references(paper_id)` - Get papers cited by a paper
-
-2. **Agent Loop**: Haiku iteratively searches, reads papers, and builds understanding until it submits a complete review
-
-3. **LLM-as-Judge Evaluation**: Sonnet grades the review against a reference using a strict 10-point rubric:
-   - **Section 1 (5 pts)**: Coverage of all major approaches (must include specific papers + quantitative results)
-   - **Section 2 (3 pts)**: Seminal works cited with results
-   - **Section 3 (2 pts)**: Quality of synthesis (comparisons, trade-offs, trends)
-   - Pass threshold: 7/10
-
-### Topics Covered
-
-The current literature reviews cover:
-- **LLM Memory**: Extended context, RAG, summarization, MemGPT, model editing (ROME/MEMIT)
-- **RL & Alignment**: RLHF, continual RL, world models, Decision Transformer
-- **Robotics**: Foundation models (RT-1/RT-2), sim-to-real, imitation learning
-
-### Key Design Decisions
-
-- **Extract introductions, not just abstracts**: Paper intros contain the authors' own literature context
-- **Require quantitative results**: "RAG helps" is not enough - need specific numbers
-- **Reference-based grading**: Compare against ground truth literature review
-- **Strict rubric**: Each criterion has clear PASS/FAIL conditions
-
-### Evaluation Results
-
-**Result: PASS (8/10)** - Threshold: 7/10
-
-| Approach | Topics | Results | Score |
-|----------|--------|---------|-------|
-| 1. Extended Context | PASS | PASS | 2/2 |
-| 2. RAG/Retrieval | PASS | PASS | 2/2 |
-| 3. Summarization | PASS | PASS | 2/2 |
-| 4. Memory Architectures | PASS | PASS | 2/2 |
-
-#### Key Findings
-
-- Agent produced **28K-character review** with 20+ papers and quantitative results
-- Successfully extracted results using LLM-based PDF section extraction (`claude-haiku-4-5`)
-- Papers found: LongLoRA, Infini-attention, InstructRetro, LLMLingua-2, MemGPT, HiAgent, etc.
-
-#### Sample Results Extracted
-
-| Paper | Key Metric |
-|-------|------------|
-| LongLoRA | Extends Llama2 7B from 4k→100k context |
-| Infini-attention | 96-100% accuracy at 1M token passkey retrieval |
-| InstructRetro | 7-16% improvement over GPT-43B on QA tasks |
-| LLMLingua-2 | 3-6x compression with 79% EM on GSM8K |
-| MemGPT | 92.5% vs 32.1% baseline on DMR benchmark |
-
-
-## Idea Proposal Task
-
-Generates novel research ideas from literature reviews using a Haiku agent loop, then evaluates them with Sonnet extended thinking.
-
-### Usage
-
-```bash
-cd tasks/idea-proposal
-
-# Full mode: reads all 3 literatures (RL, Memory, Robotics)
-python test_task.py
-
-# Single topic modes:
-python test_task.py --memory     # LLM long-term memory
-python test_task.py --rl         # Reinforcement learning & alignment
-python test_task.py --robotics   # Data-efficient robotics
-```
-
-### How it works
-
-1. **Haiku Agent Loop**: Reads literature reviews, optionally searches for papers, generates 3-5 research ideas
-2. **Sonnet Extended Thinking Judge**: Evaluates each idea on:
-   - Business Viability (30%)
-   - Potential Upside (25%)
-   - Likelihood of Success (30%)
-   - Novelty (15%)
-3. **Scoring**: Each idea gets a weighted score, plus an average across all ideas
-
-### Output
-
-- Individual idea scores (1-10)
-- Average score across all ideas
-- Verdict: EXCEPTIONAL / GOOD / MEDIOCRE / POOR
-
-### Evaluation Results
-
-| Topic | Average Score | Verdict | Result |
-|-------|---------------|---------|--------|
-| RL | 5.53/10 | MEDIOCRE | FAIL |
-| Robotics | 5.75/10 | MEDIOCRE | FAIL |
-| Memory | 5.6/10 | MEDIOCRE | FAIL |
+Let me first talk about my main submission and then all the other experiments I ran.
 
 ---
 
-### Detailed Analysis: RL Topic
+## Main Submission: Neural Memory Implementation Task
 
-**What Haiku Proposed** (3 ideas in ~32s):
-1. **Adaptive Reward Model Updating** - Continual learning for reward models as human preferences evolve
-2. **Hierarchical Preference Learning** - Multi-level RLHF (token, response, conversation levels)
-3. **Modular Alignment Networks** - Separate modules for helpfulness, harmlessness, honesty
+**Pass Rate: 10% (Sonnet 4.5)**
 
-**Why Sonnet Gave Low Scores**:
+This is the biggest unhobbling needed to make AI superhuman, all current RL is cope to not have algorithms to do this well.
 
-| Idea | Score | Key Criticism |
-|------|-------|---------------|
-| Adaptive Reward | 5.85/10 | "Continual learning for reward models is unsolved - catastrophic forgetting problem. Prior work (Scialom et al., 2022) shows this degrades performance without massive compute" |
-| Hierarchical Pref | 5.55/10 | "Multi-level optimization is extremely unstable. No evidence hierarchical RL helps for RLHF specifically. Incremental improvement at best" |
-| Modular Alignment | 5.2/10 | "No evidence alignment dimensions are separable. Constitutional AI already handles multi-objective alignment without modular architecture" |
+Moreover, I believe these continual learning models must have memory and it MUST be in the model weights, and not simply in stored context. The model weights are much higher dimensional, that is also the way our brain works (memory is stored in synapse weights).
 
-**Judge's Summary**: *"These read like academic exercise ('let's apply continual RL concepts to RLHF') rather than problem-driven research ('we discovered this critical failure mode in production and here's a solution'). Grade: C+ / MEDIOCRE"*
-
----
-
-### Detailed Analysis: Robotics Topic
-
-**What Haiku Proposed** (3 ideas in ~37s):
-1. **AMARET** - Adaptive Multimodal Representation with Elastic Task-Weighted Learning
-2. **HiSR** - Hierarchical Simulation-Reality Bridging through Generative World Models
-3. **FedSkill** - Privacy-Aware Federated Continual Learning for Robot Fleets
-
-**Why Sonnet Gave Low Scores**:
-
-| Idea | Score | Key Criticism |
-|------|-------|---------------|
-| AMARET | 4.6/10 | "Solving a non-problem. RT-2 and RoboCat show frozen encoders + fine-tuning works. 5 interacting components with no clear ablation path - Occam's Razor violation" |
-| HiSR | 6.05/10 | "No evidence hierarchical world models help - Dreamer uses flat latents and works well. 3 world models + 3 discriminators = adversarial training nightmare" |
-| FedSkill | 6.6/10 | "Best of the three. Clearest business model (privacy + bandwidth). But Tesla FSD uses centralized learning - why? Centralized is simpler and works better" |
-
-**Judge's Summary**: *"FedSkill is the most pragmatic and could be a solid product/deployment innovation, but it's not going to win you best paper at CoRL or RSS. AMARET should be deprioritized - solving a problem that may not exist."*
-
----
-
-### Detailed Analysis: Memory Topic
-
-**What Haiku Proposed** (3 ideas in ~32s):
-1. **AMTS** - Adaptive Memory Triaging System (learned policy for memory placement)
-2. **Temporal Memory Graphs** - Causal reasoning layer for temporal consistency
-3. **SFMCO** - Strategic Forgetting and Memory Consolidation Optimizer
-
-**Why Sonnet Gave Low Scores**:
-
-| Idea | Score | Key Criticism |
-|------|-------|---------------|
-| AMTS | 5.0/10 | "Policy network training signal is extremely weak. Continual learning/parametric tier is unsolved. LangChain/LlamaIndex already do memory management - crowded market" |
-| Temporal Graphs | 5.1/10 | "Causal extraction from natural language is unsolved. Counterfactual reasoning is philosophically and technically hard. Pearl's framework is 30+ years old" |
-| SFMCO | 6.7/10 | "Best idea. Addresses urgent pain point (Character.AI users report coherence degrading after weeks). But lossy consolidation could lose critical info (allergies, legal constraints)" |
-
-**Judge's Summary**: *"None are exceptional. Best idea (SFMCO) is promising but not paradigm-shifting - more like 'better memory management' than transformers or RLHF. Recommendation: Pursue SFMCO, deprioritize others."*
-
----
-
-### Why All Topics Failed
-
-The Sonnet extended thinking judge (~150s of reasoning) consistently penalizes:
-
-1. **Lack of Problem Evidence**: Ideas propose solutions without proving the problem exists
-   - "RT-2 shows frozen encoders work" → adaptive representations may be unnecessary
-   - "Tesla uses centralized learning" → federated approach needs justification
-
-2. **Unsolved Dependencies**: Ideas rely on components that are open research problems
-   - Continual learning without catastrophic forgetting
-   - Causal extraction from natural language
-   - Hierarchical world models outperforming flat models
-
-3. **Complexity vs. Baselines**: Simpler approaches often work as well
-   - 5-component systems vs. frozen encoder + fine-tuning
-   - Hierarchical discriminators vs. domain randomization + scale
-
-4. **Academic Framing**: Ideas read as "let's combine X and Y" rather than "we observed failure mode Z"
-
-## Neural Memory Implementation Task
-
-Tests whether an agent can implement a neural long-term memory module from biological hints, getting all the technical details right.
+I really like the paper Titans: Learning to Memorize at Test Time (by Google) - https://arxiv.org/abs/2501.00663, so I use that to give hints and get to design experiments. Verified based on the implementation in the paper.
 
 ### The Challenge
 
-Given a simple Transformer and hints about how biological memory works, the agent must add a Neural Long-Term Memory module with:
+Given a simple transformer and hints about how biological memory works, the agent must implement a Neural Long-Term Memory module with 6 specific components:
 
 1. **NeuralMemory Class** - A proper nn.Module with memory logic
 2. **Surprise Gate with Sigmoid** - Learned metric controlling memory writes
 3. **Learnable Decay Parameter** - nn.Parameter for memory fade rate
 4. **Outer Product for Association** - V ⊗ K^T for key-value binding
 5. **Recurrent Memory Update** - Per-timestep loop updating memory state
-6. **Memory-Attention Gating** - Learned fusion of attention and memory outputs
-
-### Grading
-
-- **Execution Test**: Code must run and produce correct output shape
-- **LLM-as-Judge** (Sonnet 4.5) evaluates code against 6 strict criteria
-- **Pass threshold**: 6/6 (all criteria must pass)
-- Reference solution provided in `titans_solution.py`
-
-### Results (Sonnet 4.5, 10 runs)
-
-**Pass Rate: 10% (1/10)** ✓ In target range
-
-The task provides hints about biological memory (surprise, decay, associations, blending) and the outer product formula, but does NOT explicitly tell the model about surprise gates or fusion formulas.
-
-#### What Models Consistently Get Right (4/6)
-
-| Criterion | Pass Rate | Why It Passes |
-|-----------|-----------|---------------|
-| NeuralMemory Class | 100% | Clear requirement in prompt |
-| Learnable Decay | ~90% | "Make parameters learnable" hint works |
-| Outer Product | ~90% | Explicit formula provided: `M += V ⊗ K^T` |
-| Recurrent Update | ~90% | "Process tokens one at a time" is explicit |
-
-#### What Models Consistently Get Wrong (Differentiators)
-
-| Criterion | Pass Rate | Why It Fails |
-|-----------|-----------|--------------|
-| Surprise Gate | ~20% | Models implement generic learned gates (e.g., `write_gate = sigmoid(Linear(x))`), not prediction-error based surprise (comparing input to what memory predicts). The prompt hints at "surprising or novel information" but doesn't say HOW to compute surprise. |
-| Memory-Attention Gating | ~20% | Models use `x + g * mem` (residual) or `concat(attn, mem) → Linear` instead of the required complementary gating: `g * attn + (1-g) * mem`. The `(1-g)` pattern is the key insight models miss. |
-
-#### Example Failure Patterns
-
-**Surprise Gate Failures:**
-```python
-# What models write (FAILS):
-write_gate = torch.sigmoid(self.gate_proj(x_t))  # Just a learned gate
-
-# What's required (PASSES):
-retrieved = M @ query  # What memory predicts
-surprise = torch.sigmoid(self.surprise_net(x_t - retrieved))  # Prediction error
-```
-
-**Memory-Attention Gating Failures:**
-```python
-# What models write (FAILS):
-output = x_t + gate * memory_out  # Residual addition
-output = self.blend(torch.cat([attn, mem], dim=-1))  # Concatenation
-
-# What's required (PASSES):
-g = torch.sigmoid(self.gate(torch.cat([attn, mem], dim=-1)))
-output = g * attn + (1 - g) * mem  # Complementary interpolation
-```
-
-#### The One That Passed (Run 5)
-
-The successful submission implemented:
-- `novelty_net` comparing input with retrieved memory
-- Proper `gate_output` with `g * mem + (1-g) * x` formula
-- All other criteria correctly
-
-### Run Tests
-
-```bash
-cd tasks/titan-paper-implementation
-
-# Single run (Haiku by default)
-python combined_task.py
-
-# Single run with Sonnet
-python combined_task.py claude-sonnet-4-5-20250929
-
-# 10 parallel runs with Sonnet
-python combined_task.py --multi 10 claude-sonnet-4-5-20250929
-```
-
-## FSDP Training Task
-
-Tests whether an agent can convert a single-GPU training script to distributed training with FSDP.
+6. **Memory-Attention Gating** - Learned fusion: `g * attn + (1-g) * mem`
 
 ### The Prompt
 
-The agent receives a single-GPU training script and is asked:
+```
+Standard attention has quadratic cost and a fixed context window. Your goal is to add an auxiliary memory system that can store and retrieve information beyond the attention window.
 
-> Convert the training script to use PyTorch FSDP. Your solution must:
-> 1. Initialize distributed training with NCCL backend
-> 2. Wrap the model with FSDP using a custom wrapping policy
-> 3. Use DistributedSampler to ensure each GPU gets different data
-> 4. Handle checkpointing correctly (only save on rank 0)
-> 5. Clean up the process group at the end
->
-> **IMPORTANT**: Use `lambda_auto_wrap_policy` with a custom lambda function that wraps modules based on:
-> - Module type: wrap all `TransformerBlock` layers
-> - Parameter count: wrap any module with more than 1,000,000 parameters
-> - Do NOT use `transformer_auto_wrap_policy` - implement the logic yourself
+Think about how biological memory works:
+- The brain doesn't remember everything equally - it prioritizes surprising or novel information
+- Old memories fade over time unless reinforced
+- Memory involves associating concepts together (binding keys to values)
+- We blend immediate context with long-term knowledge
 
-### Grading
+When does a human update their "brain weights"? Your memory system should capture this principle.
 
-Uses **LLM-as-a-judge** (Claude Sonnet) with a 10-point rubric:
+Requirements:
+1. Create a `NeuralMemory` module that maintains a memory matrix M (shape: d_mem x d_mem)
+2. Process tokens recurrently (one at a time), updating M at each step
+3. Use outer products to store associations: M += V ⊗ K^T binds values to keys
+4. Preserve the input/output signature (`input_ids` -> `logits`)
 
-| Component | Points | What's Checked |
-|-----------|--------|----------------|
-| Distributed Initialization | 1 | `init_process_group()` + LOCAL_RANK handling |
-| FSDP Model Wrapping | 2 | FSDP import + `lambda_auto_wrap_policy` with custom lambda |
-| Data Distribution | 2 | `DistributedSampler` + `set_epoch()` call |
-| Checkpoint Handling | 2 | Rank 0 only + `FSDP.state_dict_type` with `FullStateDictConfig` |
-| Cleanup | 1 | `destroy_process_group()` |
-| Optimizer Creation | 1 | Created AFTER FSDP wrap |
-| Overall Correctness | 1 | Would run correctly with torchrun |
-
-**Pass threshold**: 8/10 points
-
-### Evaluation Results (3 runs)
-
-| Run | Score | Result | Key Issues |
-|-----|-------|--------|------------|
-| 1 | 9/10 | **PASS** ✓ | Only missing `FullStateDictConfig` |
-| 2 | 5/10 | FAIL | Broken wrap_policy, wrong LOCAL_RANK, missing FullStateDictConfig |
-| 3 | 5/10 | FAIL | Wrong LOCAL_RANK (uses global rank), broken param counting in wrap policy |
-
-**Pass Rate: 33.3% (1/3)**
-
-### Common Failure Modes
-
-1. **LOCAL_RANK handling** - Haiku often uses `dist.get_rank()` instead of `os.environ["LOCAL_RANK"]` to set CUDA device. This works for single-node but breaks multi-node training.
-
-2. **Broken wrap_policy implementations** - The custom lambda function is often incorrectly implemented:
-   - Wrong function signature for `lambda_auto_wrap_policy`
-   - Counts all parameters recursively instead of just the module's own parameters
-
-3. **Missing `FullStateDictConfig`** - Most attempts miss including `FullStateDictConfig(offload_to_cpu=True, rank0_only=True)` in the checkpoint saving context manager.
-
-### Why LLM-as-Judge (not regex)
-
-The LLM evaluator catches subtle bugs that regex would miss:
-- Using global rank vs local rank (both contain "rank" but one is wrong)
-- Incorrect parameter counting in wrap policy (logic error, not syntax)
-- Wrong function signatures that would cause runtime errors
-
-### Run Tests
-
-```bash
-cd tasks/fsdp-training
-
-# Run agent evaluation (Haiku converts code, Sonnet grades)
-python evaluation.py -n 3      # 3 runs
-python evaluation.py -n 1 -q   # Single run, quiet
-
-# Unit tests (no API calls)
-SKIP_LLM_TESTS=1 python -m pytest test_grading.py -v
+Important: Make parameters learnable (nn.Parameter) rather than hardcoding values. Use sigmoid activations for gating. The model should be able to learn the right behavior through training.
 ```
 
-## Memory Optimizations Task
+### Why This Task Matters
 
-Tests whether an agent can apply multiple GPU memory optimization techniques to reduce training memory footprint.
+The prompt gives biological hints (surprising info, fading memories, associations) and the outer product formula, but does NOT explicitly tell the model about surprise gates or fusion formulas. The model must derive these from first principles.
 
-### The Challenge
+This was a task to give a model a research direction and ask it to implement the experiment while getting all the pesky details right. 
 
-Given a baseline training script with no optimizations, the agent must apply at least 6 different memory optimization techniques while keeping the code runnable.
+### Results
 
-**Possible Optimizations (11 total)**:
-1. Mixed Precision Training (AMP) - `autocast`, `GradScaler`
-2. Gradient Checkpointing - `torch.utils.checkpoint`
-3. SDPA/FlashAttention - `F.scaled_dot_product_attention`
-4. Gradient Accumulation - `accumulation_steps`
-5. Memory-efficient Optimizer - `set_to_none=True`, `fused=True`
-6. Explicit Memory Management - `torch.cuda.empty_cache()`, `del outputs`
-7. CPU Offloading / Pin Memory - `pin_memory=True`
-8. Micro-batching - `micro_batch_size`, `effective_batch_size`
-9. In-place Operations - `inplace=True`
-10. torch.compile - `torch.compile()`
-11. Memory Format Optimization - `channels_last`
+Models consistently get 4 out of 6 criteria right: the NeuralMemory class (explicitly required), learnable decay (prompted with "make parameters learnable"), outer product (formula given: `M += V ⊗ K^T`), and recurrent update ("process tokens one at a time").
 
-### Grading
+**Where models fail:**
 
-Two checks must pass:
-1. **Runtime Test**: Code must actually run without errors (tested via subprocess)
-2. **Optimization Count**: Must have ≥6 optimizations detected via regex
+The **Surprise Gate** (~80% failure rate) is where most models fall down. They implement generic learned gates like `write_gate = sigmoid(Linear(x))` instead of computing prediction-error based surprise by comparing input to what memory predicts (e.g., `surprise = sigmoid(net(x - retrieved))`). The prompt hints at "surprising or novel information" but doesn't say HOW to compute surprise.
 
-### Results (10 runs)
+The **Memory-Attention Gating** (~80% failure rate) is the other differentiator. Models use residual patterns like `output = x + gate * mem` or concatenation `output = Linear(concat(attn, mem))` instead of the complementary interpolation `g * attn + (1-g) * mem`. The `(1-g)` pattern is the key insight models miss.
 
-| Metric | Value |
-|--------|-------|
-| **Pass Rate** | **10%** (1/10) |
-| Passed | 1 |
-| Failed | 9 |
+**When it passed (1/10 runs):** The successful submission implemented a `novelty_net` comparing input with retrieved memory for surprise, and proper gating with `g * mem + (1-g) * x` formula.
 
-**Failure Breakdown**:
-- `runtime_error`: 7 (70%) - mostly wrong autocast API (`device_type` arg not supported)
-- `insufficient_optimizations`: 2 (20%) - code runs but only 5/6 optimizations
+### Ablations
 
-### Why It's Hard
+I ran several ablations to calibrate the task difficulty:
 
-- No hand-holding in the prompt - agent must know PyTorch APIs correctly
-- Common failure: using `autocast(device_type=...)` which is wrong for `torch.cuda.amp.autocast`
-- Must balance adding optimizations without breaking the code
-- Some optimizations (like `fused=True`) fail on CPU
+| Prompt Configuration | Pass Rate | Notes |
+|---------------------|-----------|-------|
+| Explicit hints for all 6 criteria | 60-100% | Too easy - spoonfeeding the answer |
+| Only biological hints (no outer product) | 0% | Too hard - models propose K,V caches instead of associative matrix |
+| Biological hints + outer product formula | 0% | Still too hard without learnable params hint |
+| + "Make parameters learnable" + "Use sigmoid for gating" | **10%** | Target range achieved |
 
-### Run Tests
+The key insight: giving the outer product formula gets models to the right memory structure, but they still need to derive the surprise mechanism and fusion pattern themselves. That's what makes it a 10% task instead of 0% or 60%.
 
-```bash
-cd tasks/memory-optimizations
-python evaluation.py -n 10 -q  # 10 runs, quiet mode
-python evaluation.py -n 1      # Single run, verbose
-```
+### Sister Experiment: Progressive 5-Step Evaluation
+
+I also ran a decomposed version where instead of asking for the full implementation, I tested each concept independently in parallel:
+
+| Step | Concept | Without Pseudocode | With Pseudocode |
+|------|---------|-------------------|-----------------|
+| 1 | Memory Structure (associative matrix) | 0% | 0% |
+| 2 | Filtering/Surprise mechanism | 20% | 90% |
+| 3 | Update Rule with Decay | 10% | 30% |
+| 4 | Attention-Memory Fusion | 90% | 70% |
+| 5 | Full Implementation | 70% | 90% |
+
+**Key Insight**: Asking for pseudocode dramatically improves Steps 2, 3, and 5 because it forces the model to commit to concrete mechanisms rather than vague descriptions. Step 1 remains at 0% because the fundamental architectural choice (associative matrix vs. K,V cache) isn't affected by asking for pseudocode - it's a conceptual gap.
 
 ---
 
-## Task Summary
+## Other Experiments
 
-| Task | Purpose | Grading Method | Pass Threshold | Observed Success Rate |
-|------|---------|----------------|----------------|----------------------|
-| Literature Review | Research synthesis | LLM-as-Judge (Sonnet) | 7/10 | **100%** (8/10) |
-| Idea Proposal | Novel idea generation | Extended Thinking Judge | GOOD or EXCEPTIONAL | **0%** (avg score: 5.6/10) |
-| Neural Memory | Implement neural memory | Execution + LLM-as-Judge | 6/6 criteria | **10%** (Sonnet 4.5) |
-| FSDP Training | Distributed training | LLM-as-Judge (Sonnet) | 8/10 | **33%** (subtle bugs) |
-| Memory Optimizations | GPU memory reduction | Runtime test + Regex | 6+ optimizations + runs | **10%** (runtime errors) |
+I wanted to test the limits of AI in how well it can do literature survey, how good the research directions it proposes are, and how well it can do infra optimizations to run experiments.
+
+### Task 2: Literature Review
+
+**Pass Rate: 100%**
+
+Tests how comprehensively an LLM can survey a research field in 3 areas - memory, RL and robotics.
+
+**The Prompt:**
+```
+Create a comprehensive literature review covering ALL major approaches:
+- Extended context windows (Gemini 1M, Longformer, RMT)
+- Retrieval-Augmented Generation (RAG, RETRO)
+- Summarization and context compression
+- Specialized memory architectures (MemGPT, LongMem)
+- Parametric memory (ROME/MEMIT, continual learning)
+
+For EACH approach, include specific papers with quantitative results.
+```
+
+**Tools provided:**
+- `web_search(query)` - Search arXiv/Semantic Scholar for papers
+- `get_paper_with_tldr(paper_id)` - Get paper details + AI-generated summary
+- `get_paper_introduction(paper_id)` - Extract intro section (contains authors' lit review)
+- `get_paper_results(paper_id)` - Extract quantitative results from PDF
+- `get_paper_references(paper_id)` - Get papers cited by a paper
+
+**Evaluation:** LLM-as-Judge (Sonnet) grades against a 10-point rubric requiring specific papers + quantitative results for each approach (Passes if 7/10 or above). Mainly graded based on if it captures the right high level insights and results from papers, and if it references all the seminal papers. 
+
+**Result:** Agent produced 28K-character review with 20+ papers. Successfully found LongLoRA (4k→100k context), Infini-attention (96-100% at 1M tokens), MemGPT (92.5% vs 32.1% baseline).
+
+---
+
+### Task 3: Idea Proposal
+
+**Pass Rate: 5.6/10**
+
+Tests research taste - can the model propose ideas that are both novel AND likely to succeed.
+
+**The Prompt:**
+```
+You have access to literature reviews in RL, Memory, and Robotics.
+Propose 5-7 novel research ideas that:
+- Address REAL gaps in the literature
+- Have HIGH IMPACT if successful
+- Have BUSINESS VALUE (practical applications)
+- Are FEASIBLE within 1-2 years
+
+For each idea, provide: Problem, Approach, Why Now, Impact/Business/Feasibility scores, Key Risks.
+Prioritize by: (Impact * 0.4) + (Business Value * 0.4) + (Feasibility * 0.2)
+```
+
+**Tools provided:**
+- `get_all_literature()` - Read all 3 literature reviews
+- `get_literature(topic)` - Read specific topic (RL, Memory, Robotics)
+- `web_search(query)` - Search for additional papers
+
+**Evaluation:** Sonnet with extended thinking (~150s reasoning, 10k thinking tokens) judges each idea on:
+- Business Viability (30%)
+- Potential Upside (25%)
+- Likelihood of Success (30%)
+- Novelty (15%)
+
+Pass requires GOOD or EXCEPTIONAL verdict.
+
+**Why it fails consistently:**
+
+| Problem | What the judge says |
+|---------|---------------------|
+| Solving non-problems | "You propose adaptive encoders, but RT-2 already shows frozen encoders work fine" |
+| Unsolved dependencies | "Your idea assumes continual learning works without catastrophic forgetting - that's still an open problem" |
+| Over-engineering | "You have 5 interacting components when simple fine-tuning achieves similar results" |
+| Academic framing | "This reads as 'let's combine X and Y' instead of 'we observed failure mode Z and here's how to fix it'" |
+
+The judge's summary: *"These read like academic exercise rather than problem-driven research."*
+
+---
+
+### Task 4: FSDP Training
+
+**Pass Rate: 33% (1/3)**
+
+Tests whether an agent can convert single-GPU training to distributed FSDP.
+
+**The Prompt:**
+```
+Convert the training script to use PyTorch FSDP. Your solution must:
+1. Initialize distributed training with NCCL backend
+2. Wrap model with FSDP using lambda_auto_wrap_policy (NOT transformer_auto_wrap_policy)
+3. Use DistributedSampler with set_epoch()
+4. Handle checkpointing correctly (rank 0 only, use FSDP.state_dict_type)
+5. Clean up process group at the end
+
+Use custom lambda that wraps TransformerBlock layers OR modules with >1M parameters.
+```
+
+**Tools provided:** Just `submit_answer` - no additional tools needed.
+
+**Evaluation:** LLM-as-Judge (Sonnet) with 10-point rubric:
+- Distributed init (1pt), FSDP wrapping (2pts), Data distribution (2pts), Checkpoint handling (2pts), Cleanup (1pt), Optimizer after FSDP (1pt), Overall correctness (1pt)
+- Pass threshold: 8/10
+
+**Common failures:**
+- Using `dist.get_rank()` instead of `os.environ["LOCAL_RANK"]` (breaks multi-node)
+- Wrong function signature for `lambda_auto_wrap_policy`
+- Missing `FullStateDictConfig(offload_to_cpu=True, rank0_only=True)`
+
+**Why LLM-as-Judge:** Catches subtle bugs regex would miss - global rank vs local rank, incorrect parameter counting logic.
+
+---
+
+### Task 5: Memory Optimizations
+
+**Pass Rate: 10% (1/10)**
+
+Tests whether an agent can apply 6+ GPU memory optimizations while keeping code runnable.
+
+**The Prompt:**
+```
+Optimize the training script to reduce GPU memory usage.
+Apply memory optimization techniques you know (mixed precision, gradient checkpointing, etc.)
+
+Requirements:
+- Do NOT modify model architecture
+- Apply at least 5 different memory optimization techniques
+- Code must be valid, runnable Python
+```
+
+**Tools provided:** Just `submit_answer` - no additional tools needed.
+
+**Evaluation:** Two-step grading:
+1. **Runtime Test**: Code must actually run without errors (tested via subprocess with small model)
+2. **Optimization Count**: LLM (Haiku) counts distinct techniques - must have ≥5
+
+**Failure breakdown:**
+- 70% runtime errors (wrong `autocast` API)
+- 20% insufficient optimizations (only 5/6)
+
+**Why it's hard:** No hand-holding - agent must know PyTorch APIs correctly. Common failure: `autocast(device_type=...)` which is wrong for `torch.cuda.amp.autocast`.
+
+---
+
+## Summary
+
+| Task | Purpose | Pass Rate |
+|------|---------|-----------|
+| **Neural Memory** | Implement continual learning | **10%** |
+| Literature Review | Research synthesis | 100% |
+| Idea Proposal | Research taste | 0% |
+| FSDP Training | Distributed infra | 33% |
+| Memory Optimizations | GPU optimization | 10% |
+
+The Neural Memory task is my main submission - it tests the most important capability (implementing novel architectures from high-level descriptions) at the right difficulty level (10% pass rate gives room for RL training signal).
+
+
+
+You can also find the code for individual tasks in the `tasks` directory.
