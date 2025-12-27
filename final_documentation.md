@@ -63,9 +63,9 @@ Models consistently get 4 out of 6 criteria right: the NeuralMemory class (expli
 
 **Where models fail:**
 
-The **Surprise Gate** (~80% failure rate) is where most models fall down. They implement generic learned gates like `write_gate = sigmoid(Linear(x))` instead of computing prediction-error based surprise by comparing input to what memory predicts (e.g., `surprise = sigmoid(net(x - retrieved))`). The prompt hints at "surprising or novel information" but doesn't say HOW to compute surprise.
+The **Memory-Attention Gating** (~80% failure rate) is the hardest criterion. Models use residual patterns like `output = x + gate * mem` or concatenation `output = Linear(concat(attn, mem))` instead of the complementary interpolation `g * attn + (1-g) * mem`. The `(1-g)` pattern is the key insight models miss.
 
-The **Memory-Attention Gating** (~80% failure rate) is the other differentiator. Models use residual patterns like `output = x + gate * mem` or concatenation `output = Linear(concat(attn, mem))` instead of the complementary interpolation `g * attn + (1-g) * mem`. The `(1-g)` pattern is the key insight models miss.
+The **Surprise Gate** (~50% failure rate) is the other differentiator. They implement generic learned gates like `write_gate = sigmoid(Linear(x))` instead of computing prediction-error based surprise by comparing input to what memory predicts (e.g., `surprise = sigmoid(net(x - retrieved))`). The prompt hints at "surprising or novel information" but doesn't say HOW to compute surprise.
 
 **When it passed (1/10 runs):** The successful submission implemented a `novelty_net` comparing input with retrieved memory for surprise, and proper gating with `g * mem + (1-g) * x` formula.
 
@@ -127,7 +127,7 @@ For EACH approach, include specific papers with quantitative results.
 - `get_paper_results(paper_id)` - Extract quantitative results from PDF
 - `get_paper_references(paper_id)` - Get papers cited by a paper
 
-**Evaluation:** LLM-as-Judge (Sonnet) grades against a 10-point rubric requiring specific papers + quantitative results for each approach (Passes if 7/10 or above). Mainly graded based on if it captures the right high level insights and results from papers, and if it references all the seminal papers. 
+**Evaluation:** LLM-as-Judge (Sonnet) grades against a 10-point rubric requiring specific papers + quantitative results for each approach (Passes if 7/10 or above). I created deep research reports with detailed guidelines for each field (Memory, RL, Robotics) as ground truth, and the rubric compares the agent's output against these reference documents. Mainly graded based on if it captures the right high level insights and results from papers, and if it references all the seminal papers. 
 
 **Result:** Agent produced 28K-character review with 20+ papers. Successfully found LongLoRA (4k→100k context), Infini-attention (96-100% at 1M tokens), MemGPT (92.5% vs 32.1% baseline).
 
